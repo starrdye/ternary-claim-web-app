@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Ternary — Admin</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@300;400;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/static/css/styles.css" />
+  <link rel="stylesheet" href="/static/css/admin.css" />
+</head>
+<body>
+
+<div class="shell">
+  <header class="topbar">
+    <div class="topbar-left">
+      <span class="topbar-company">Ternary Fund Management Pte Ltd</span>
+      <span class="topbar-divider">|</span>
+      <span class="topbar-doc">Admin — Claim Submissions</span>
+    </div>
+    <div class="topbar-right">
+      <a href="/" class="tb-link">+ New Claim</a>
+    </div>
+  </header>
+
+  <div class="admin-layout">
+
+    <!-- Summary strip -->
+    <div class="summary-strip" id="summary-strip">
+      <div class="summary-card" id="s-total">
+        <div class="sc-num">—</div>
+        <div class="sc-label">Total Submitted</div>
+      </div>
+      <div class="summary-card pending" id="s-pending">
+        <div class="sc-num">—</div>
+        <div class="sc-label">Pending Review</div>
+      </div>
+      <div class="summary-card approved" id="s-approved">
+        <div class="sc-num">—</div>
+        <div class="sc-label">Approved</div>
+      </div>
+      <div class="summary-card rejected" id="s-rejected">
+        <div class="sc-num">—</div>
+        <div class="sc-label">Rejected</div>
+      </div>
+      <div class="summary-card amount" id="s-amount">
+        <div class="sc-num">—</div>
+        <div class="sc-label">Total Approved (SGD)</div>
+      </div>
+    </div>
+
+    <!-- Filter bar -->
+    <div class="filter-bar">
+      <div class="filter-group">
+        <input type="text" id="search" placeholder="Search employee or claim no…" oninput="applyFilters()" />
+        <select id="filter-status" onchange="applyFilters()">
+          <option value="">All statuses</option>
+          <option value="Pending">Pending</option>
+          <option value="Approved">Approved</option>
+          <option value="Rejected">Rejected</option>
+        </select>
+      </div>
+      <div class="filter-count" id="filter-count"></div>
+    </div>
+
+    <!-- Table -->
+    <div class="table-wrap">
+      <table class="admin-table" id="admin-table">
+        <thead>
+          <tr>
+            <th class="th-sortable" data-col="submitted_at" onclick="sortBy('submitted_at')">Submitted <span class="sort-icon">↕</span></th>
+            <th class="th-sortable" data-col="employee_name" onclick="sortBy('employee_name')">Employee <span class="sort-icon">↕</span></th>
+            <th>Claim No.</th>
+            <th>Period</th>
+            <th class="th-right th-sortable" data-col="total" onclick="sortBy('total')">Total (SGD) <span class="sort-icon">↕</span></th>
+            <th>Items</th>
+            <th>Docs</th>
+            <th>Status</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody id="admin-tbody">
+          <tr><td colspan="9" class="empty-row">Loading…</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+  </div>
+</div>
+
+<!-- Detail drawer -->
+<div id="drawer-backdrop" class="drawer-backdrop" onclick="closeDrawer()"></div>
+<div id="detail-drawer" class="detail-drawer">
+  <div class="drawer-header">
+    <div>
+      <div class="drawer-title" id="drawer-title">Claim Detail</div>
+      <div class="drawer-sub" id="drawer-sub"></div>
+    </div>
+    <button class="drawer-close" onclick="closeDrawer()">×</button>
+  </div>
+
+  <div class="drawer-body" id="drawer-body">
+    <!-- injected by JS -->
+  </div>
+
+  <div class="drawer-footer">
+    <span class="drawer-status-label">Change status:</span>
+    <button class="status-btn pending"  onclick="setStatus('Pending')">Pending</button>
+    <button class="status-btn approved" onclick="setStatus('Approved')">Approved</button>
+    <button class="status-btn rejected" onclick="setStatus('Rejected')">Rejected</button>
+    <button class="dl-btn" onclick="downloadExcel()">
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+      Download Excel
+    </button>
+  </div>
+</div>
+
+<script src="/static/js/admin.js"></script>
+</body>
+</html>
