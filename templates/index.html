@@ -10,146 +10,158 @@
 </head>
 <body>
 
-<div class="shell">
-
-  <!-- TOP BAR -->
-  <header class="topbar">
-    <div class="topbar-left">
-      <span class="topbar-company">Ternary Fund Management Pte Ltd</span>
-      <span class="topbar-divider">|</span>
-      <span class="topbar-doc">Expense Claim Form</span>
-    </div>
-    <div class="topbar-right">
-      <a href="/admin" class="tb-link">Admin View</a>
-      <button class="tb-btn tb-btn-outline" onclick="generateExcel()">
-        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-        Download Excel
-      </button>
-      <button class="tb-btn" onclick="submitClaim()">
-        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><polyline points="20 6 9 17 4 12"/></svg>
-        Submit Claim
-      </button>
-    </div>
-  </header>
-
-  <div class="layout">
-
-    <!-- LEFT: Editable Form -->
-    <div class="form-panel">
-      <div class="doc-sheet">
-
-        <!-- Company header (mirrors Excel top) -->
-        <div class="doc-top">
-          <div class="doc-title-block">
-            <div class="doc-title">EXPENSE CLAIM</div>
-            <div class="doc-co">Ternary Fund Management Pte Ltd</div>
-            <div class="doc-co-sub">UEN: 201902851Z &nbsp;·&nbsp; 50 Armenian Street #02-04 Wilmer Place, Singapore 179938</div>
-          </div>
-        </div>
-
-        <!-- Meta section (mirrors rows 7-9 of Excel) -->
-        <div class="meta-grid">
-          <div class="meta-row">
-            <span class="meta-label">Employee's Name:</span>
-            <input class="meta-input" id="employee_name" type="text" placeholder="Last, First" />
-          </div>
-          <div class="meta-period">
-            <span class="meta-label">Claim Period</span>
-            <div class="period-dates">
-              <span class="period-sub">FROM</span>
-              <input class="meta-input meta-date" id="period_from" type="date" />
-              <span class="period-sub">TO</span>
-              <input class="meta-input meta-date" id="period_to" type="date" />
-            </div>
-          </div>
-          <div class="meta-row">
-            <span class="meta-label">Claim Form no.:</span>
-            <input class="meta-input meta-short" id="claim_no" type="text" placeholder="e.g. 26414" />
-          </div>
-        </div>
-
-        <!-- Items Table (mirrors Excel table) -->
-        <table class="claim-table" id="claim-table">
-          <thead>
-            <tr>
-              <th class="col-date">DATE</th>
-              <th class="col-desc">DESCRIPTION</th>
-              <th class="col-gst">GST AMOUNT<br><small>on each bill</small></th>
-              <th class="col-total">TOTAL (SGD)</th>
-              <th class="col-docs">DOCS</th>
-              <th class="col-act"></th>
-            </tr>
-          </thead>
-          <tbody id="items-tbody">
-            <!-- Rows injected by JS -->
-          </tbody>
-          <tfoot>
-            <tr class="total-row">
-              <td colspan="3" class="total-label-cell">Total Reimbursement</td>
-              <td class="total-value-cell" id="grand-total">0.00</td>
-              <td colspan="2"></td>
-            </tr>
-          </tfoot>
-        </table>
-
-        <div class="table-actions">
-          <button class="btn-add-row" onclick="addItem()">+ Add Row</button>
-        </div>
-
-        <!-- Signature section (mirrors Excel rows 37-38) -->
-        <div class="sig-section">
-          <div class="sig-block">
-            <div class="sig-line"></div>
-            <div class="sig-label">Received by</div>
-            <div class="sig-date-row"><span class="sig-date-label">Date:</span><div class="sig-date-line"></div></div>
-          </div>
-          <div class="sig-block">
-            <div class="sig-line"></div>
-            <div class="sig-label">Approved by</div>
-            <div class="sig-date-row"><span class="sig-date-label">Date:</span><div class="sig-date-line"></div></div>
-          </div>
-        </div>
-
-        <!-- Notes -->
-        <div class="notes-section">
-          <span class="notes-label">Note:</span>
-          <textarea id="notes" class="notes-input" rows="2" placeholder="Any additional notes…"></textarea>
-        </div>
-
-      </div><!-- /doc-sheet -->
-    </div><!-- /form-panel -->
-
-    <!-- RIGHT: Preview -->
-    <div class="preview-panel">
-      <div class="preview-label">Live Preview</div>
-      <div id="preview-content" class="preview-scroll">
-        <div class="preview-placeholder">Start filling in the form to see a print preview</div>
-      </div>
-    </div>
-
+<!-- Top action bar (not part of the printable form) -->
+<header class="topbar">
+  <div class="topbar-left">
+    <a href="/admin" class="tb-admin-link" id="admin-link" style="display:none">Admin View</a>
   </div>
-</div>
+  <div class="topbar-right">
+    <span class="tb-user" id="tb-user"></span>
+    <button class="tb-btn tb-outline" onclick="generateExcel()">
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+      Download Excel
+    </button>
+    <button class="tb-btn tb-gold" onclick="submitClaim()">
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
+      Submit Claim
+    </button>
+    <a href="/logout" class="tb-logout">Sign out</a>
+  </div>
+</header>
 
-<!-- Upload modal -->
-<div id="upload-modal" class="modal-backdrop" onclick="closeUploadModal(event)">
+<div class="page-layout">
+
+  <!-- LEFT: Editable A4 sheet -->
+  <div class="form-panel">
+    <div class="a4-sheet" id="claim-sheet">
+
+      <!-- ① Logo row — mirrors Excel rows 1-2 -->
+      <div class="sheet-logo-row">
+        <img src="/static/logo.jpg" alt="Ternary" class="sheet-logo" />
+      </div>
+
+      <!-- ② Meta row — mirrors Excel rows 7-9 -->
+      <div class="sheet-meta">
+        <div class="meta-left">
+          <div class="meta-field-row">
+            <span class="meta-key">Employee's Name:</span>
+            <input id="employee_name" class="meta-val" type="text" placeholder="Last, First" />
+          </div>
+          <div class="meta-field-row">
+            <span class="meta-key">Claim Form no.:</span>
+            <input id="claim_no" class="meta-val meta-short" type="text" placeholder="e.g. 26414" />
+          </div>
+        </div>
+        <div class="meta-right">
+          <div class="period-title">CLAIM PERIOD</div>
+          <div class="period-labels">
+            <span>FROM</span>
+            <span>TO</span>
+          </div>
+          <div class="period-inputs">
+            <input id="period_from" class="meta-date" type="date" />
+            <input id="period_to"   class="meta-date" type="date" />
+          </div>
+        </div>
+      </div>
+
+      <!-- ③ Table — mirrors Excel rows 11+ -->
+      <table class="claim-table">
+        <thead>
+          <tr>
+            <th class="th-date">DATE</th>
+            <th class="th-desc">DESCRIPTION</th>
+            <th class="th-gst">GST amount<br><small>on each bill</small></th>
+            <th class="th-total">TOTAL (SGD)</th>
+            <th class="th-docs">DOCS</th>
+            <th class="th-del"></th>
+          </tr>
+        </thead>
+        <tbody id="items-tbody"></tbody>
+        <tfoot>
+          <tr class="total-row">
+            <td colspan="3" class="total-label-cell">Total Reimbursement</td>
+            <td class="total-val-cell" id="grand-total">0.00</td>
+            <td colspan="2"></td>
+          </tr>
+        </tfoot>
+      </table>
+
+      <div class="add-row-wrap">
+        <button class="add-row-btn" onclick="addItem()">+ Add Row</button>
+      </div>
+
+      <!-- ④ Signature section — mirrors Excel rows 37-38 -->
+      <div class="sig-section">
+        <div class="sig-block">
+          <div class="sig-line"></div>
+          <div class="sig-name-label">Received by</div>
+          <div class="sig-date-row">
+            <span class="sig-date-key">Date</span>
+            <div class="sig-date-line"></div>
+          </div>
+        </div>
+        <div class="sig-block">
+          <div class="sig-line"></div>
+          <div class="sig-name-label">Approved by</div>
+          <div class="sig-date-row">
+            <span class="sig-date-key">Date</span>
+            <div class="sig-date-line"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ⑤ Note — mirrors Excel row 41 -->
+      <div class="note-section">
+        <span class="note-key">Note:</span>
+        <textarea id="notes" class="note-input" rows="2" placeholder="Additional notes…"></textarea>
+      </div>
+
+      <!-- ⑥ Footer — mirrors Excel rows 53-57 -->
+      <div class="sheet-footer">
+        <div class="footer-co">Ternary Fund Management Pte Ltd</div>
+        <div class="footer-sub">UEN: 201902851Z</div>
+        <div class="footer-sub">50 Armenian Street #02-04 Wilmer Place, Singapore 179938</div>
+        <div class="footer-contacts">
+          <span><img src="/static/icon-phone.svg" class="contact-icon" onerror="this.style.display='none'" />+65 6970 6272</span>
+          <span><img src="/static/icon-mail.svg"  class="contact-icon" onerror="this.style.display='none'" />admin@ternaryfmc.com</span>
+          <span><img src="/static/icon-web.svg"   class="contact-icon" onerror="this.style.display='none'" />www.ternaryfmc.com</span>
+        </div>
+      </div>
+
+    </div><!-- /a4-sheet -->
+  </div><!-- /form-panel -->
+
+  <!-- RIGHT: Live preview -->
+  <div class="preview-panel">
+    <div class="preview-label">Live Preview</div>
+    <div id="preview-box" class="preview-scroll">
+      <div class="preview-ph">Fill in the form to see a print preview</div>
+    </div>
+  </div>
+
+</div><!-- /page-layout -->
+
+<!-- File upload modal -->
+<div id="upload-modal" class="modal-back" onclick="closeModal(event)">
   <div class="modal-box">
-    <div class="modal-header">
-      <span class="modal-title">Attach Documents — <span id="modal-item-label"></span></span>
-      <button class="modal-close" onclick="closeUploadModal()">×</button>
+    <div class="modal-hdr">
+      <span class="modal-title">Attach Documents — <span id="modal-label"></span></span>
+      <button class="modal-x" onclick="closeModal()">×</button>
     </div>
     <div class="modal-body">
-      <div class="upload-zone" id="modal-upload-zone" onclick="triggerUpload(this)">
+      <div class="upload-zone" id="modal-zone" onclick="triggerUpload(this)">
         <input type="file" class="file-input" accept=".jpg,.jpeg,.png,.gif,.pdf,.webp,.heic,.msg,.docx" multiple style="display:none" onchange="handleFiles(this)" />
         <div class="upload-prompt">
-          <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+          <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
           <span>Click or drag files here</span>
-          <small>JPG · PNG · PDF · MSG · DOCX · max 50 MB each</small>
+          <small>JPG · PNG · PDF · MSG · DOCX &nbsp;·&nbsp; max 50 MB</small>
         </div>
       </div>
-      <div class="modal-file-list" id="modal-file-list"></div>
+      <div id="modal-file-list" class="modal-file-list"></div>
     </div>
-    <div class="modal-footer">
-      <button class="tb-btn" onclick="closeUploadModal()">Done</button>
+    <div class="modal-ftr">
+      <button class="tb-btn tb-gold" onclick="closeModal()">Done</button>
     </div>
   </div>
 </div>
