@@ -16,17 +16,32 @@ COMPANY_NAME = "Ternary Fund Management Pte Ltd"
 COMPANY_UEN = "UEN: 201902851Z"
 COMPANY_ADDRESS = "50 Armenian Street #02-04 Wilmer Place, Singapore 179938"
 
-TEMPLATE_PATH = os.path.join(
-    os.path.dirname(__file__),
-    'static', 'Claim incl GST sample.xlsx'
-)
+DB_PATH = os.path.join(os.path.dirname(__file__), 'submissions.json')
 
 os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
 
 
+# ── Submission store ──────────────────────────────────
+def _load_submissions():
+    if not os.path.exists(DB_PATH):
+        return []
+    with open(DB_PATH, 'r', encoding='utf-8') as f:
+        return json.load(f)
+
+def _save_submissions(subs):
+    with open(DB_PATH, 'w', encoding='utf-8') as f:
+        json.dump(subs, f, indent=2, ensure_ascii=False)
+
+
+# ── Routes ────────────────────────────────────────────
 @app.route('/')
 def index():
     return render_template('index.html')
+
+
+@app.route('/admin')
+def admin():
+    return render_template('admin.html')
 
 
 @app.route('/uploads/<path:filename>')
@@ -56,6 +71,62 @@ def upload_file():
         'original_name': file.filename,
         'url': f'/uploads/{unique_name}'
     })
+
+
+@app.route('/api/submit', methods=['POST'])
+def submit_claim():
+    data = request.get_json()
+    if not data:
+        return jsonify({'error': 'No data'}), 400
+
+    subs = _load_submissions()
+    submission_id = uuid.uuid4().hex[:10]
+    total = sum(float(it.get('total') or 0) for it in data.get('items', []) if it.get('total'))
+
+    record = {
+        'id': submission_id,
+        'submitted_at': datetime.now().isoformat(timespec='seconds'),
+        'status': 'Pending',
+        'employee_name': data.get('employee_name', ''),
+        'claim_no': data.get('claim_no', ''),
+        'period_from': data.get('period_from', ''),
+        'period_to': data.get('period_to', ''),
+        'total': round(total, 2),
+        'notes': data.get('notes', ''),
+        'items': data.get('items', []),
+        'attachments': data.get('attachments', []),
+    }
+    subs.append(record)
+    _save_submissions(subs)
+    return jsonify({'id': submission_id})
+
+
+@app.route('/api/submissions', methods=['GET'])
+def list_submissions():
+    return jsonify(_load_submissions())
+
+
+@app.route('/api/submissions/<sid>', methods=['GET'])
+def get_submission(sid):
+    subs = _load_submissions()
+    rec = next((s for s in subs if s['id'] == sid), None)
+    if not rec:
+        return jsonify({'error': 'Not found'}), 404
+    return jsonify(rec)
+
+
+@app.route('/api/submissions/<sid>/status', methods=['PATCH'])
+def update_status(sid):
+    new_status = request.get_json(force=True).get('status', '')
+    if new_status not in ('Pending', 'Approved', 'Rejected'):
+        return jsonify({'error': 'Invalid status'}), 400
+    subs = _load_submissions()
+    rec = next((s for s in subs if s['id'] == sid), None)
+    if not rec:
+        return jsonify({'error': 'Not found'}), 404
+    rec['status'] = new_status
+    _save_submissions(subs)
+    return jsonify({'ok': True})
 
 
 @app.route('/api/generate-excel', methods=['POST'])
