@@ -6,7 +6,15 @@ let sortAsc = false;
 let activeId = null;
 
 /* ── Init ──────────────────────────────────────────── */
-document.addEventListener('DOMContentLoaded', loadSubmissions);
+document.addEventListener('DOMContentLoaded', async () => {
+  try {
+    const res  = await fetch('/api/me');
+    const user = await res.json();
+    const el   = document.getElementById('tb-user-admin');
+    if (el) el.textContent = user.display_name;
+  } catch { /* ignore */ }
+  await loadSubmissions();
+});
 
 async function loadSubmissions() {
   const res = await fetch('/api/submissions');
