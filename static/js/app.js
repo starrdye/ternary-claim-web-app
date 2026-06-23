@@ -246,14 +246,25 @@ function esc(s) {
   return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
 }
 
-/* ── Generate Excel ─────────────────────────────────── */
-async function generateExcel() {
+/* ── Submit Claim ───────────────────────────────────── */
+async function submitClaim() {
   const name = document.getElementById('employee_name').value.trim();
-  if (!name) { alert('Please enter the employee name.'); return; }
+  if (!name) { alert('Please enter the employee name before submitting.'); return; }
+  if (!items.some(it => it.description || it.total)) { alert('Please add at least one claim item.'); return; }
 
+  const payload = buildPayload();
+  try {
+    const res = await fetch('/api/submit', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload) });
+    if (!res.ok) throw new Error();
+    const { id } = await res.json();
+    showSubmitSuccess(id);
+  } catch { alert('Submission failed. Is the server running?'); }
+}
+
+function buildPayload() {
   const allAtt = items.flatMap((it,i) => it.files.map(f=>({item_index:i+1, description:it.description, ...f})));
-  const payload = {
-    employee_name: name,
+  return {
+    employee_name: document.getElementById('employee_name').value.trim(),
     claim_no:      document.getElementById('claim_no').value.trim(),
     period_from:   document.getElementById('period_from').value,
     period_to:     document.getElementById('period_to').value,
@@ -261,6 +272,29 @@ async function generateExcel() {
     items:         items.map(it=>({ date:it.date, description:it.description, gst:it.gst, total:it.total })),
     attachments:   allAtt
   };
+}
+
+function showSubmitSuccess(id) {
+  // Replace the doc sheet content with a confirmation screen
+  const sheet = document.querySelector('.doc-sheet');
+  sheet.innerHTML = `
+    <div style="text-align:center;padding:60px 20px;">
+      <div style="font-size:52px;margin-bottom:16px;">✅</div>
+      <div style="font-size:20px;font-weight:700;color:var(--slate);margin-bottom:8px;">Claim Submitted</div>
+      <div style="font-size:13px;color:var(--muted);margin-bottom:6px;">Reference ID: <strong style="color:var(--text)">${id}</strong></div>
+      <div style="font-size:13px;color:var(--muted);margin-bottom:28px;">Finance will review your claim and update its status.</div>
+      <div style="display:flex;gap:12px;justify-content:center;">
+        <a href="/admin" style="background:var(--slate);color:#fff;padding:10px 22px;border-radius:4px;text-decoration:none;font-weight:700;font-size:13px;">View in Admin</a>
+        <a href="/" style="background:var(--gold);color:var(--slate);padding:10px 22px;border-radius:4px;text-decoration:none;font-weight:700;font-size:13px;">New Claim</a>
+      </div>
+    </div>`;
+}
+
+/* ── Generate Excel ─────────────────────────────────── */
+async function generateExcel() {
+  const name = document.getElementById('employee_name').value.trim();
+  if (!name) { alert('Please enter the employee name.'); return; }
+  const payload = buildPayload();
 
   try {
     const res = await fetch('/api/generate-excel', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload) });
