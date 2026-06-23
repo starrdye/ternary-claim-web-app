@@ -2,13 +2,16 @@ import os
 import io
 import json
 import uuid
+import hashlib
 from datetime import datetime
-from flask import Flask, request, jsonify, send_file, render_template, send_from_directory
+from functools import wraps
+from flask import Flask, request, jsonify, send_file, render_template, send_from_directory, session, redirect, url_for
 from openpyxl import load_workbook, Workbook
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 from openpyxl.utils import get_column_letter
 
 app = Flask(__name__)
+app.secret_key = os.environ.get('SECRET_KEY', 'ternary-claim-secret-2026-change-in-prod')
 app.config['UPLOAD_FOLDER'] = os.path.join(os.path.dirname(__file__), 'uploads')
 app.config['MAX_CONTENT_LENGTH'] = 50 * 1024 * 1024  # 50 MB
 
@@ -16,9 +19,52 @@ COMPANY_NAME = "Ternary Fund Management Pte Ltd"
 COMPANY_UEN = "UEN: 201902851Z"
 COMPANY_ADDRESS = "50 Armenian Street #02-04 Wilmer Place, Singapore 179938"
 
-DB_PATH = os.path.join(os.path.dirname(__file__), 'submissions.json')
+DB_PATH    = os.path.join(os.path.dirname(__file__), 'submissions.json')
+USERS_PATH = os.path.join(os.path.dirname(__file__), 'users.json')
 
 os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
+
+
+# ── Auth helpers ──────────────────────────────────────
+def _hash(pw: str) -> str:
+    return hashlib.sha256(pw.encode()).hexdigest()
+
+def _load_users():
+    if not os.path.exists(USERS_PATH):
+        # seed default users on first run
+        defaults = [
+            {'username': 'admin',    'password': _hash('admin123'),   'role': 'admin',    'display_name': 'Admin'},
+            {'username': 'xingye',   'password': _hash('pass1234'),   'role': 'employee', 'display_name': 'Xingye, Zhou'},
+            {'username': 'peter',    'password': _hash('pass1234'),   'role': 'employee', 'display_name': 'Peter Tan'},
+            {'username': 'jason',    'password': _hash('pass1234'),   'role': 'employee', 'display_name': 'Jason Chan'},
+            {'username': 'mary',     'password': _hash('pass1234'),   'role': 'employee', 'display_name': 'Mary'},
+        ]
+        with open(USERS_PATH, 'w', encoding='utf-8') as f:
+            json.dump(defaults, f, indent=2)
+        return defaults
+    with open(USERS_PATH, 'r', encoding='utf-8') as f:
+        return json.load(f)
+
+def _get_user(username):
+    return next((u for u in _load_users() if u['username'] == username), None)
+
+def login_required(f):
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        if 'username' not in session:
+            return redirect(url_for('login_page'))
+        return f(*args, **kwargs)
+    return decorated
+
+def admin_required(f):
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        if 'username' not in session:
+            return redirect(url_for('login_page'))
+        if session.get('role') != 'admin':
+            return jsonify({'error': 'Admin only'}), 403
+        return f(*args, **kwargs)
+    return decorated
 
 
 # ── Submission store ──────────────────────────────────
@@ -33,23 +79,62 @@ def _save_submissions(subs):
         json.dump(subs, f, indent=2, ensure_ascii=False)
 
 
+# ── Auth routes ───────────────────────────────────────
+@app.route('/login', methods=['GET'])
+def login_page():
+    if 'username' in session:
+        return redirect(url_for('index'))
+    return render_template('login.html')
+
+@app.route('/login', methods=['POST'])
+def login_post():
+    data = request.get_json(force=True)
+    user = _get_user(data.get('username', '').strip().lower())
+    if not user or user['password'] != _hash(data.get('password', '')):
+        return jsonify({'error': 'Invalid username or password'}), 401
+    session['username']     = user['username']
+    session['role']         = user['role']
+    session['display_name'] = user['display_name']
+    return jsonify({'role': user['role']})
+
+@app.route('/logout')
+def logout():
+    session.clear()
+    return redirect(url_for('login_page'))
+
+@app.route('/api/me')
+@login_required
+def me():
+    return jsonify({
+        'username':     session['username'],
+        'role':         session['role'],
+        'display_name': session['display_name'],
+    })
+
+
 # ── Routes ────────────────────────────────────────────
 @app.route('/')
+@login_required
 def index():
     return render_template('index.html')
 
 
 @app.route('/admin')
+@login_required
 def admin():
+    if session.get('role') != 'admin':
+        return redirect(url_for('index'))
     return render_template('admin.html')
 
 
 @app.route('/uploads/<path:filename>')
+@login_required
 def uploaded_file(filename):
     return send_from_directory(app.config['UPLOAD_FOLDER'], filename)
 
 
 @app.route('/api/upload', methods=['POST'])
+@login_required
 def upload_file():
     if 'file' not in request.files:
         return jsonify({'error': 'No file'}), 400
@@ -74,6 +159,7 @@ def upload_file():
 
 
 @app.route('/api/submit', methods=['POST'])
+@login_required
 def submit_claim():
     data = request.get_json()
     if not data:
@@ -86,6 +172,7 @@ def submit_claim():
     record = {
         'id': submission_id,
         'submitted_at': datetime.now().isoformat(timespec='seconds'),
+        'submitted_by': session['username'],
         'status': 'Pending',
         'employee_name': data.get('employee_name', ''),
         'claim_no': data.get('claim_no', ''),
@@ -102,20 +189,28 @@ def submit_claim():
 
 
 @app.route('/api/submissions', methods=['GET'])
+@login_required
 def list_submissions():
-    return jsonify(_load_submissions())
+    subs = _load_submissions()
+    if session.get('role') != 'admin':
+        subs = [s for s in subs if s.get('submitted_by') == session['username']]
+    return jsonify(subs)
 
 
 @app.route('/api/submissions/<sid>', methods=['GET'])
+@login_required
 def get_submission(sid):
     subs = _load_submissions()
     rec = next((s for s in subs if s['id'] == sid), None)
     if not rec:
         return jsonify({'error': 'Not found'}), 404
+    if session.get('role') != 'admin' and rec.get('submitted_by') != session['username']:
+        return jsonify({'error': 'Forbidden'}), 403
     return jsonify(rec)
 
 
 @app.route('/api/submissions/<sid>/status', methods=['PATCH'])
+@admin_required
 def update_status(sid):
     new_status = request.get_json(force=True).get('status', '')
     if new_status not in ('Pending', 'Approved', 'Rejected'):
@@ -130,6 +225,7 @@ def update_status(sid):
 
 
 @app.route('/api/generate-excel', methods=['POST'])
+@login_required
 def generate_excel():
     data = request.get_json()
     if not data:
