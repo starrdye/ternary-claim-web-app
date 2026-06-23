@@ -3,132 +3,151 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Ternary Claim Submission</title>
+  <title>Ternary — Expense Claim</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@300;400;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/static/css/styles.css" />
 </head>
 <body>
 
-<div class="layout">
+<div class="shell">
 
-  <!-- LEFT: Form Panel -->
-  <div class="form-panel">
-    <div class="form-header">
-      <img src="/static/logo.svg" alt="Ternary" class="logo" onerror="this.style.display='none'" />
-      <div>
-        <h1>Expense Claim</h1>
-        <p class="subtitle">Ternary Fund Management Pte Ltd</p>
+  <!-- TOP BAR -->
+  <header class="topbar">
+    <div class="topbar-left">
+      <span class="topbar-company">Ternary Fund Management Pte Ltd</span>
+      <span class="topbar-divider">|</span>
+      <span class="topbar-doc">Expense Claim Form</span>
+    </div>
+    <div class="topbar-right">
+      <button class="tb-btn" onclick="generateExcel()">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+        Download Excel
+      </button>
+    </div>
+  </header>
+
+  <div class="layout">
+
+    <!-- LEFT: Editable Form -->
+    <div class="form-panel">
+      <div class="doc-sheet">
+
+        <!-- Company header (mirrors Excel top) -->
+        <div class="doc-top">
+          <div class="doc-title-block">
+            <div class="doc-title">EXPENSE CLAIM</div>
+            <div class="doc-co">Ternary Fund Management Pte Ltd</div>
+            <div class="doc-co-sub">UEN: 201902851Z &nbsp;·&nbsp; 50 Armenian Street #02-04 Wilmer Place, Singapore 179938</div>
+          </div>
+        </div>
+
+        <!-- Meta section (mirrors rows 7-9 of Excel) -->
+        <div class="meta-grid">
+          <div class="meta-row">
+            <span class="meta-label">Employee's Name:</span>
+            <input class="meta-input" id="employee_name" type="text" placeholder="Last, First" />
+          </div>
+          <div class="meta-period">
+            <span class="meta-label">Claim Period</span>
+            <div class="period-dates">
+              <span class="period-sub">FROM</span>
+              <input class="meta-input meta-date" id="period_from" type="date" />
+              <span class="period-sub">TO</span>
+              <input class="meta-input meta-date" id="period_to" type="date" />
+            </div>
+          </div>
+          <div class="meta-row">
+            <span class="meta-label">Claim Form no.:</span>
+            <input class="meta-input meta-short" id="claim_no" type="text" placeholder="e.g. 26414" />
+          </div>
+        </div>
+
+        <!-- Items Table (mirrors Excel table) -->
+        <table class="claim-table" id="claim-table">
+          <thead>
+            <tr>
+              <th class="col-date">DATE</th>
+              <th class="col-desc">DESCRIPTION</th>
+              <th class="col-gst">GST AMOUNT<br><small>on each bill</small></th>
+              <th class="col-total">TOTAL (SGD)</th>
+              <th class="col-docs">DOCS</th>
+              <th class="col-act"></th>
+            </tr>
+          </thead>
+          <tbody id="items-tbody">
+            <!-- Rows injected by JS -->
+          </tbody>
+          <tfoot>
+            <tr class="total-row">
+              <td colspan="3" class="total-label-cell">Total Reimbursement</td>
+              <td class="total-value-cell" id="grand-total">0.00</td>
+              <td colspan="2"></td>
+            </tr>
+          </tfoot>
+        </table>
+
+        <div class="table-actions">
+          <button class="btn-add-row" onclick="addItem()">+ Add Row</button>
+        </div>
+
+        <!-- Signature section (mirrors Excel rows 37-38) -->
+        <div class="sig-section">
+          <div class="sig-block">
+            <div class="sig-line"></div>
+            <div class="sig-label">Received by</div>
+            <div class="sig-date-row"><span class="sig-date-label">Date:</span><div class="sig-date-line"></div></div>
+          </div>
+          <div class="sig-block">
+            <div class="sig-line"></div>
+            <div class="sig-label">Approved by</div>
+            <div class="sig-date-row"><span class="sig-date-label">Date:</span><div class="sig-date-line"></div></div>
+          </div>
+        </div>
+
+        <!-- Notes -->
+        <div class="notes-section">
+          <span class="notes-label">Note:</span>
+          <textarea id="notes" class="notes-input" rows="2" placeholder="Any additional notes…"></textarea>
+        </div>
+
+      </div><!-- /doc-sheet -->
+    </div><!-- /form-panel -->
+
+    <!-- RIGHT: Preview -->
+    <div class="preview-panel">
+      <div class="preview-label">Live Preview</div>
+      <div id="preview-content" class="preview-scroll">
+        <div class="preview-placeholder">Start filling in the form to see a print preview</div>
       </div>
     </div>
 
-    <!-- Employee Info -->
-    <section class="card">
-      <h2>Claimant Details</h2>
-      <div class="form-row two-col">
-        <div class="field">
-          <label for="employee_name">Employee Name <span class="req">*</span></label>
-          <input type="text" id="employee_name" placeholder="e.g. Xingye, Zhou" />
-        </div>
-        <div class="field">
-          <label for="claim_no">Claim Form No.</label>
-          <input type="text" id="claim_no" placeholder="e.g. 26414" />
-        </div>
-      </div>
-      <div class="form-row two-col">
-        <div class="field">
-          <label for="period_from">Claim Period From <span class="req">*</span></label>
-          <input type="date" id="period_from" />
-        </div>
-        <div class="field">
-          <label for="period_to">Claim Period To <span class="req">*</span></label>
-          <input type="date" id="period_to" />
-        </div>
-      </div>
-    </section>
-
-    <!-- Line Items -->
-    <section class="card">
-      <div class="section-header">
-        <h2>Claim Items</h2>
-        <button class="btn-add" onclick="addItem()">+ Add Item</button>
-      </div>
-
-      <div id="items-container">
-        <!-- Items injected by JS -->
-      </div>
-
-      <div class="total-bar">
-        <span class="total-label">Total Reimbursement (SGD)</span>
-        <span class="total-amount" id="grand-total">0.00</span>
-      </div>
-    </section>
-
-    <!-- Notes -->
-    <section class="card">
-      <h2>Notes</h2>
-      <textarea id="notes" rows="3" placeholder="Any additional notes for this claim…"></textarea>
-    </section>
-
-    <!-- Actions -->
-    <div class="actions">
-      <button class="btn-secondary" onclick="previewForm()">Refresh Preview</button>
-      <button class="btn-primary" onclick="generateExcel()">Download Excel</button>
-    </div>
   </div>
-
-  <!-- RIGHT: Preview Panel -->
-  <div class="preview-panel">
-    <div class="preview-header">
-      <h2>Form Preview</h2>
-      <span class="preview-hint">Auto-updates as you type</span>
-    </div>
-    <div id="preview-content" class="preview-box">
-      <div class="preview-placeholder">Fill in the form to see a live preview</div>
-    </div>
-  </div>
-
 </div>
 
-<!-- Item template (hidden) -->
-<template id="item-template">
-  <div class="item-card" data-index="">
-    <div class="item-top">
-      <span class="item-num">Item <strong class="item-num-val">1</strong></span>
-      <button class="btn-remove" onclick="removeItem(this)">Remove</button>
+<!-- Upload modal -->
+<div id="upload-modal" class="modal-backdrop" onclick="closeUploadModal(event)">
+  <div class="modal-box">
+    <div class="modal-header">
+      <span class="modal-title">Attach Documents — <span id="modal-item-label"></span></span>
+      <button class="modal-close" onclick="closeUploadModal()">×</button>
     </div>
-    <div class="form-row two-col">
-      <div class="field">
-        <label>Date <span class="req">*</span></label>
-        <input type="date" class="item-date" />
-      </div>
-      <div class="field">
-        <label>Description <span class="req">*</span></label>
-        <input type="text" class="item-desc" placeholder="e.g. Team lunch at Shake Shack" />
-      </div>
-    </div>
-    <div class="form-row two-col">
-      <div class="field">
-        <label>GST Amount (SGD)</label>
-        <input type="number" class="item-gst" min="0" step="0.01" placeholder="Leave blank if no GST" />
-      </div>
-      <div class="field">
-        <label>Total Amount (SGD) <span class="req">*</span></label>
-        <input type="number" class="item-total" min="0" step="0.01" placeholder="0.00" />
-      </div>
-    </div>
-    <div class="field">
-      <label>Supporting Documents</label>
-      <div class="upload-zone" onclick="triggerUpload(this)">
+    <div class="modal-body">
+      <div class="upload-zone" id="modal-upload-zone" onclick="triggerUpload(this)">
         <input type="file" class="file-input" accept=".jpg,.jpeg,.png,.gif,.pdf,.webp,.heic,.msg,.docx" multiple style="display:none" onchange="handleFiles(this)" />
         <div class="upload-prompt">
-          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
-          <span>Click to upload or drag &amp; drop</span>
-          <small>JPG, PNG, PDF, MSG, DOCX — max 50 MB each</small>
+          <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+          <span>Click or drag files here</span>
+          <small>JPG · PNG · PDF · MSG · DOCX · max 50 MB each</small>
         </div>
-        <div class="file-list"></div>
       </div>
+      <div class="modal-file-list" id="modal-file-list"></div>
+    </div>
+    <div class="modal-footer">
+      <button class="tb-btn" onclick="closeUploadModal()">Done</button>
     </div>
   </div>
-</template>
+</div>
 
 <script src="/static/js/app.js"></script>
 </body>

@@ -1,312 +1,276 @@
 /* ── State ─────────────────────────────────────────── */
-let items = [];  // [{id, date, description, gst, total, files:[{filename, original_name, url}]}]
+let items = [];
 let nextId = 1;
+let activeModalItemId = null;
 
 /* ── Init ──────────────────────────────────────────── */
 document.addEventListener('DOMContentLoaded', () => {
   addItem();
-  bindLivePreview();
+  addItem();
+  ['employee_name','claim_no','period_from','period_to','notes'].forEach(id => {
+    document.getElementById(id)?.addEventListener('input', renderPreview);
+  });
+  setupModalDragDrop();
 });
 
-/* ── Live Preview binding ──────────────────────────── */
-function bindLivePreview() {
-  const inputs = ['employee_name', 'claim_no', 'period_from', 'period_to', 'notes'];
-  inputs.forEach(id => {
-    const el = document.getElementById(id);
-    if (el) el.addEventListener('input', previewForm);
-  });
-}
-
-/* ── Item Management ───────────────────────────────── */
+/* ── Items ─────────────────────────────────────────── */
 function addItem() {
   const id = nextId++;
-  items.push({ id, date: '', description: '', gst: '', total: '', files: [] });
+  items.push({ id, date:'', description:'', gst:'', total:'', files:[] });
+  const tbody = document.getElementById('items-tbody');
+  const tr = document.createElement('tr');
+  tr.dataset.id = id;
+  tr.innerHTML = rowHtml(id, items.length);
+  tbody.appendChild(tr);
+  bindRow(tr, id);
+  renumber();
+  renderPreview();
+}
 
-  const tmpl = document.getElementById('item-template');
-  const clone = tmpl.content.cloneNode(true);
-  const card = clone.querySelector('.item-card');
-  card.dataset.id = id;
-  card.querySelector('.item-num-val').textContent = items.length;
+function rowHtml(id, num) {
+  return `
+    <td><input class="cell-input item-date" type="date" /></td>
+    <td><input class="cell-input cell-desc item-desc" type="text" placeholder="Description" /></td>
+    <td><input class="cell-input item-gst" type="number" min="0" step="0.01" placeholder="—" /></td>
+    <td><input class="cell-input item-total" type="number" min="0" step="0.01" placeholder="0.00" /></td>
+    <td class="docs-cell">
+      <button class="docs-btn" onclick="openUploadModal(${id})" title="Attach files">
+        📎<span class="doc-badge" style="display:none">0</span>
+      </button>
+    </td>
+    <td class="act-cell"><button class="row-remove" onclick="removeItem(this)" title="Remove row">×</button></td>`;
+}
 
-  // Bind field events
-  card.querySelector('.item-date').addEventListener('input', e => {
-    getItem(id).date = e.target.value;
-    previewForm();
-  });
-  card.querySelector('.item-desc').addEventListener('input', e => {
-    getItem(id).description = e.target.value;
-    previewForm();
-  });
-  card.querySelector('.item-gst').addEventListener('input', e => {
-    getItem(id).gst = e.target.value;
-    previewForm();
-  });
-  card.querySelector('.item-total').addEventListener('input', e => {
-    getItem(id).total = e.target.value;
-    updateTotal();
-    previewForm();
-  });
-
-  // Store item id in upload zone for file association
-  const zone = card.querySelector('.upload-zone');
-  zone.dataset.itemId = id;
-  setupDragDrop(zone);
-
-  document.getElementById('items-container').appendChild(clone);
-  renumberItems();
-  previewForm();
+function bindRow(tr, id) {
+  tr.querySelector('.item-date').addEventListener('input', e => { getItem(id).date = e.target.value; renderPreview(); });
+  tr.querySelector('.item-desc').addEventListener('input', e => { getItem(id).description = e.target.value; renderPreview(); });
+  tr.querySelector('.item-gst').addEventListener('input',  e => { getItem(id).gst = e.target.value; renderPreview(); });
+  tr.querySelector('.item-total').addEventListener('input', e => { getItem(id).total = e.target.value; updateTotal(); renderPreview(); });
 }
 
 function removeItem(btn) {
-  const card = btn.closest('.item-card');
-  const id = parseInt(card.dataset.id);
-  items = items.filter(it => it.id !== id);
-  card.remove();
-  renumberItems();
+  const tr = btn.closest('tr');
+  const id = parseInt(tr.dataset.id);
+  items = items.filter(i => i.id !== id);
+  tr.remove();
+  renumber();
   updateTotal();
-  previewForm();
+  renderPreview();
 }
 
-function getItem(id) {
-  return items.find(it => it.id === id);
-}
+function getItem(id) { return items.find(i => i.id === id); }
 
-function renumberItems() {
-  document.querySelectorAll('.item-card').forEach((card, i) => {
-    card.querySelector('.item-num-val').textContent = i + 1;
+function renumber() {
+  document.querySelectorAll('#items-tbody tr').forEach((tr, i) => {
+    // no visible row numbers in this design
   });
 }
 
-/* ── Total ─────────────────────────────────────────── */
 function updateTotal() {
-  const sum = items.reduce((acc, it) => acc + (parseFloat(it.total) || 0), 0);
+  const sum = items.reduce((a, it) => a + (parseFloat(it.total) || 0), 0);
   document.getElementById('grand-total').textContent = sum.toFixed(2);
 }
 
-/* ── File Upload ───────────────────────────────────── */
-function triggerUpload(zone) {
-  zone.querySelector('.file-input').click();
+/* ── Upload Modal ───────────────────────────────────── */
+function openUploadModal(itemId) {
+  activeModalItemId = itemId;
+  const it = getItem(itemId);
+  document.getElementById('modal-item-label').textContent = it.description || `Item ${items.indexOf(it)+1}`;
+  // rebuild file list
+  const list = document.getElementById('modal-file-list');
+  list.innerHTML = '';
+  it.files.forEach(f => appendFileChip(list, f, itemId));
+  document.getElementById('upload-modal').classList.add('open');
 }
 
-function setupDragDrop(zone) {
+function closeUploadModal(e) {
+  if (e && e.target !== document.getElementById('upload-modal')) return;
+  document.getElementById('upload-modal').classList.remove('open');
+  activeModalItemId = null;
+}
+
+function setupModalDragDrop() {
+  const zone = document.getElementById('modal-upload-zone');
   zone.addEventListener('dragover', e => { e.preventDefault(); zone.classList.add('dragover'); });
   zone.addEventListener('dragleave', () => zone.classList.remove('dragover'));
   zone.addEventListener('drop', e => {
-    e.preventDefault();
-    zone.classList.remove('dragover');
-    const input = zone.querySelector('.file-input');
-    uploadFiles(zone, e.dataTransfer.files);
+    e.preventDefault(); zone.classList.remove('dragover');
+    if (activeModalItemId !== null) uploadFiles(e.dataTransfer.files, activeModalItemId);
   });
 }
 
+function triggerUpload(zone) { zone.querySelector('.file-input').click(); }
+
 async function handleFiles(input) {
-  const zone = input.closest('.upload-zone');
-  await uploadFiles(zone, input.files);
+  if (activeModalItemId !== null) await uploadFiles(input.files, activeModalItemId);
   input.value = '';
 }
 
-async function uploadFiles(zone, fileList) {
-  const itemId = parseInt(zone.dataset.itemId);
-  const item = getItem(itemId);
-  if (!item) return;
+async function uploadFiles(fileList, itemId) {
+  const it = getItem(itemId);
+  if (!it) return;
+  const list = document.getElementById('modal-file-list');
 
   for (const file of fileList) {
-    const chip = addFileChip(zone, file.name, null, true);
+    const placeholder = { filename: null, original_name: file.name, url: '#' };
+    const chip = appendFileChip(list, placeholder, itemId, true);
     try {
       const fd = new FormData();
       fd.append('file', file);
-      const res = await fetch('/api/upload', { method: 'POST', body: fd });
-      if (!res.ok) throw new Error(await res.text());
+      const res = await fetch('/api/upload', { method:'POST', body: fd });
+      if (!res.ok) throw new Error();
       const data = await res.json();
-      item.files.push({ filename: data.filename, original_name: data.original_name, url: data.url });
+      placeholder.filename = data.filename;
+      placeholder.original_name = data.original_name;
+      placeholder.url = data.url;
+      it.files.push({ ...placeholder });
       chip.querySelector('a').href = data.url;
       chip.querySelector('a').textContent = data.original_name;
       chip.classList.remove('uploading');
-      previewForm();
-    } catch (err) {
-      chip.style.borderColor = 'var(--danger)';
-      chip.querySelector('a').textContent = `Error: ${file.name}`;
+      updateDocsBadge(itemId);
+      renderPreview();
+    } catch {
+      chip.querySelector('.chip-name').textContent = `Upload failed: ${file.name}`;
+      chip.style.borderColor = '#c0392b';
     }
   }
 }
 
-function addFileChip(zone, name, url, uploading) {
-  const list = zone.querySelector('.file-list');
+function appendFileChip(container, f, itemId, uploading) {
   const chip = document.createElement('div');
   chip.className = 'file-chip' + (uploading ? ' uploading' : '');
-
   const icon = document.createElement('span');
   icon.className = 'chip-icon';
-  icon.textContent = fileIcon(name);
-
+  icon.textContent = fileIcon(f.original_name);
+  const nameWrap = document.createElement('span');
+  nameWrap.className = 'chip-name';
   const link = document.createElement('a');
-  link.href = url || '#';
-  link.target = '_blank';
-  link.textContent = name;
-  const label = document.createElement('span');
-  label.appendChild(link);
-
+  link.href = f.url; link.target = '_blank'; link.textContent = f.original_name;
+  nameWrap.appendChild(link);
   const rm = document.createElement('span');
-  rm.className = 'chip-remove';
-  rm.textContent = '×';
-  rm.onclick = (e) => {
-    e.stopPropagation();
-    // Remove from item files
-    const itemId = parseInt(zone.dataset.itemId);
-    const item = getItem(itemId);
-    if (item) item.files = item.files.filter(f => f.original_name !== name);
+  rm.className = 'chip-rm'; rm.textContent = '×';
+  rm.onclick = () => {
+    const it = getItem(itemId);
+    if (it) it.files = it.files.filter(x => x.filename !== f.filename);
     chip.remove();
-    previewForm();
+    updateDocsBadge(itemId);
+    renderPreview();
   };
-
-  chip.appendChild(icon);
-  chip.appendChild(label);
-  chip.appendChild(rm);
-  list.appendChild(chip);
+  chip.append(icon, nameWrap, rm);
+  container.appendChild(chip);
   return chip;
 }
 
-function fileIcon(name) {
-  const ext = name.split('.').pop().toLowerCase();
-  const icons = { pdf: '📄', jpg: '🖼', jpeg: '🖼', png: '🖼', gif: '🖼', webp: '🖼', heic: '🖼', msg: '📧', docx: '📝', doc: '📝' };
-  return icons[ext] || '📎';
+function updateDocsBadge(itemId) {
+  const it = getItem(itemId);
+  const tr = document.querySelector(`#items-tbody tr[data-id="${itemId}"]`);
+  if (!tr || !it) return;
+  const badge = tr.querySelector('.doc-badge');
+  if (badge) {
+    badge.textContent = it.files.length;
+    badge.style.display = it.files.length > 0 ? '' : 'none';
+  }
 }
 
-/* ── Preview ───────────────────────────────────────── */
-function previewForm() {
-  const name = document.getElementById('employee_name').value.trim();
+function fileIcon(name) {
+  const ext = (name||'').split('.').pop().toLowerCase();
+  return { pdf:'📄', jpg:'🖼', jpeg:'🖼', png:'🖼', gif:'🖼', webp:'🖼', heic:'🖼', msg:'📧', docx:'📝', doc:'📝' }[ext] || '📎';
+}
+
+/* ── Preview ────────────────────────────────────────── */
+function renderPreview() {
+  const name    = document.getElementById('employee_name').value.trim();
   const claimNo = document.getElementById('claim_no').value.trim();
-  const from = document.getElementById('period_from').value;
-  const to = document.getElementById('period_to').value;
-  const notes = document.getElementById('notes').value.trim();
+  const from    = document.getElementById('period_from').value;
+  const to      = document.getElementById('period_to').value;
+  const notes   = document.getElementById('notes').value.trim();
 
-  const container = document.getElementById('preview-content');
-
-  if (!name && items.every(it => !it.description)) {
-    container.innerHTML = '<div class="preview-placeholder">Fill in the form to see a live preview</div>';
+  const box = document.getElementById('preview-content');
+  const hasContent = name || items.some(it => it.description || it.total);
+  if (!hasContent) {
+    box.innerHTML = '<div class="preview-placeholder">Start filling in the form to see a print preview</div>';
     return;
   }
 
-  const fmtDate = (d) => d ? new Date(d + 'T00:00:00').toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : '—';
-  const fmtAmt = (v) => v !== '' && v !== null && v !== undefined ? parseFloat(v).toFixed(2) : '—';
+  const fd = d => d ? new Date(d+'T00:00:00').toLocaleDateString('en-GB',{day:'2-digit',month:'short',year:'numeric'}) : '—';
+  const fn = v => (v !== '' && v != null) ? parseFloat(v).toFixed(2) : '';
 
-  let rows = items.map((it, i) => {
-    const hasData = it.date || it.description || it.total;
-    if (!hasData) return '';
-    return `<tr>
-      <td>${fmtDate(it.date)}</td>
-      <td>${escHtml(it.description || '—')}</td>
-      <td class="right">${it.gst !== '' ? fmtAmt(it.gst) : '—'}</td>
-      <td class="right">${fmtAmt(it.total)}</td>
-    </tr>`;
-  }).join('');
+  const rows = items.filter(it => it.date || it.description || it.total).map(it => `
+    <tr>
+      <td class="ctr">${fd(it.date)}</td>
+      <td>${esc(it.description||'')}</td>
+      <td class="num">${it.gst !== '' ? fn(it.gst) : ''}</td>
+      <td class="num">${fn(it.total)}</td>
+    </tr>`).join('');
 
-  const grandTotal = items.reduce((s, it) => s + (parseFloat(it.total) || 0), 0);
+  const grand = items.reduce((s, it) => s + (parseFloat(it.total)||0), 0);
+  const allFiles = items.flatMap((it,i) => it.files.map(f => ({n:i+1, desc:it.description||`Item ${i+1}`, ...f})));
+  const attHtml = allFiles.length ? `<div class="prev-att">
+    <div class="prev-att-title">Attachments (${allFiles.length})</div>
+    ${allFiles.map(f=>`<div class="prev-att-item"><span class="idx">${f.n}.</span><a href="${f.url}" target="_blank">${esc(f.original_name)}</a></div>`).join('')}
+  </div>` : '';
 
-  // Attachment list
-  const allFiles = items.flatMap((it, i) => it.files.map(f => ({ num: i + 1, desc: it.description, ...f })));
-  const attHtml = allFiles.length > 0 ? `
-    <div class="doc-attachments">
-      <h4>Attachments (${allFiles.length})</h4>
-      <div class="att-list">
-        ${allFiles.map(f => `<div class="att-item"><span class="att-num">${f.num}.</span><a href="${f.url}" target="_blank">${escHtml(f.original_name)}</a></div>`).join('')}
-      </div>
-    </div>` : '';
-
-  container.innerHTML = `
-    <div class="claim-doc">
-      <div class="doc-company">Ternary Fund Management Pte Ltd</div>
-      <div class="doc-sub">UEN: 201902851Z &nbsp;|&nbsp; 50 Armenian Street #02-04 Wilmer Place, Singapore 179938</div>
-
-      <div class="doc-meta-grid">
-        <div class="doc-meta-row">
-          <span class="doc-meta-label">Employee:</span>
-          <span class="doc-meta-value">${escHtml(name || '—')}</span>
-        </div>
-        <div class="doc-meta-row">
-          <span class="doc-meta-label">Claim No.:</span>
-          <span class="doc-meta-value">${escHtml(claimNo || '—')}</span>
-        </div>
-        <div class="doc-meta-row period-range">
-          <span class="doc-meta-label">Period:</span>
-          <span class="doc-meta-value">${fmtDate(from)} → ${fmtDate(to)}</span>
-        </div>
-      </div>
-
-      <table class="doc-table">
-        <thead>
-          <tr>
-            <th>Date</th>
-            <th>Description</th>
-            <th class="right">GST (SGD)</th>
-            <th class="right">Total (SGD)</th>
-          </tr>
-        </thead>
-        <tbody>
-          ${rows || '<tr><td colspan="4" style="color:#999;text-align:center;padding:14px">No items added yet</td></tr>'}
-          <tr class="total-row">
-            <td colspan="3" style="text-align:right">Total Reimbursement</td>
-            <td class="right">${grandTotal.toFixed(2)}</td>
-          </tr>
-        </tbody>
-      </table>
-
-      ${attHtml}
-
-      ${notes ? `<div style="margin-top:12px;font-size:11px"><strong>Note:</strong> ${escHtml(notes)}</div>` : ''}
-
-      <div class="doc-footer">
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:16px;">
-          <div>Received by: _____________________ &nbsp; Date: _________</div>
-          <div>Approved by: _____________________ &nbsp; Date: _________</div>
-        </div>
-      </div>
-    </div>`;
+  box.innerHTML = `<div class="prev-doc">
+    <div class="p-title">Expense Claim</div>
+    <div class="p-co">Ternary Fund Management Pte Ltd</div>
+    <div class="p-co-sub">UEN: 201902851Z &nbsp;·&nbsp; 50 Armenian Street #02-04 Wilmer Place, Singapore 179938</div>
+    <hr class="p-divider" />
+    <div class="prev-meta">
+      <div class="prev-meta-row"><span class="lbl">Employee's Name:</span><span class="val">${esc(name||'—')}</span></div>
+      <div class="prev-meta-row"><span class="lbl">Claim Period:</span><span class="val">${fd(from)} – ${fd(to)}</span></div>
+      <div class="prev-meta-row"><span class="lbl">Claim Form no.:</span><span class="val">${esc(claimNo||'—')}</span></div>
+    </div>
+    <table class="prev-table">
+      <thead><tr>
+        <th style="width:80px">Date</th>
+        <th class="desc-th">Description</th>
+        <th style="width:70px">GST (SGD)</th>
+        <th style="width:76px">Total (SGD)</th>
+      </tr></thead>
+      <tbody>${rows || '<tr><td colspan="4" style="text-align:center;color:#aaa;padding:8px">—</td></tr>'}</tbody>
+      <tfoot><tr class="total-r">
+        <td colspan="3" class="tlbl">Total Reimbursement</td>
+        <td class="num">${grand.toFixed(2)}</td>
+      </tr></tfoot>
+    </table>
+    ${attHtml}
+    ${notes ? `<div class="prev-note"><strong>Note:</strong> ${esc(notes)}</div>` : ''}
+    <div class="prev-sig">
+      <div class="prev-sig-block"><div class="prev-sig-line"></div><div>Received by &nbsp;·&nbsp; Date: __________</div></div>
+      <div class="prev-sig-block"><div class="prev-sig-line"></div><div>Approved by &nbsp;·&nbsp; Date: __________</div></div>
+    </div>
+  </div>`;
 }
 
-function escHtml(str) {
-  return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+function esc(s) {
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
 }
 
-/* ── Generate Excel ────────────────────────────────── */
+/* ── Generate Excel ─────────────────────────────────── */
 async function generateExcel() {
   const name = document.getElementById('employee_name').value.trim();
   if (!name) { alert('Please enter the employee name.'); return; }
 
-  const allAttachments = items.flatMap((it, i) =>
-    it.files.map(f => ({ item_index: i + 1, description: it.description, ...f }))
-  );
-
+  const allAtt = items.flatMap((it,i) => it.files.map(f=>({item_index:i+1, description:it.description, ...f})));
   const payload = {
     employee_name: name,
-    claim_no: document.getElementById('claim_no').value.trim(),
-    period_from: document.getElementById('period_from').value,
-    period_to: document.getElementById('period_to').value,
-    notes: document.getElementById('notes').value.trim(),
-    items: items.map(it => ({
-      date: it.date,
-      description: it.description,
-      gst: it.gst,
-      total: it.total
-    })),
-    attachments: allAttachments
+    claim_no:      document.getElementById('claim_no').value.trim(),
+    period_from:   document.getElementById('period_from').value,
+    period_to:     document.getElementById('period_to').value,
+    notes:         document.getElementById('notes').value.trim(),
+    items:         items.map(it=>({ date:it.date, description:it.description, gst:it.gst, total:it.total })),
+    attachments:   allAtt
   };
 
   try {
-    const res = await fetch('/api/generate-excel', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload)
-    });
-    if (!res.ok) throw new Error('Server error');
+    const res = await fetch('/api/generate-excel', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload) });
+    if (!res.ok) throw new Error();
     const blob = await res.blob();
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
+    const url  = URL.createObjectURL(blob);
+    const a    = document.createElement('a');
     a.href = url;
     a.download = res.headers.get('Content-Disposition')?.match(/filename="(.+)"/)?.[1] || 'claim.xlsx';
     a.click();
     URL.revokeObjectURL(url);
-  } catch (err) {
-    alert('Failed to generate Excel: ' + err.message);
-  }
+  } catch { alert('Failed to generate Excel. Is the server running?'); }
 }
