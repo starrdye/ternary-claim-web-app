@@ -1,0 +1,135 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Ternary Claim Submission</title>
+  <link rel="stylesheet" href="/static/css/styles.css" />
+</head>
+<body>
+
+<div class="layout">
+
+  <!-- LEFT: Form Panel -->
+  <div class="form-panel">
+    <div class="form-header">
+      <img src="/static/logo.svg" alt="Ternary" class="logo" onerror="this.style.display='none'" />
+      <div>
+        <h1>Expense Claim</h1>
+        <p class="subtitle">Ternary Fund Management Pte Ltd</p>
+      </div>
+    </div>
+
+    <!-- Employee Info -->
+    <section class="card">
+      <h2>Claimant Details</h2>
+      <div class="form-row two-col">
+        <div class="field">
+          <label for="employee_name">Employee Name <span class="req">*</span></label>
+          <input type="text" id="employee_name" placeholder="e.g. Xingye, Zhou" />
+        </div>
+        <div class="field">
+          <label for="claim_no">Claim Form No.</label>
+          <input type="text" id="claim_no" placeholder="e.g. 26414" />
+        </div>
+      </div>
+      <div class="form-row two-col">
+        <div class="field">
+          <label for="period_from">Claim Period From <span class="req">*</span></label>
+          <input type="date" id="period_from" />
+        </div>
+        <div class="field">
+          <label for="period_to">Claim Period To <span class="req">*</span></label>
+          <input type="date" id="period_to" />
+        </div>
+      </div>
+    </section>
+
+    <!-- Line Items -->
+    <section class="card">
+      <div class="section-header">
+        <h2>Claim Items</h2>
+        <button class="btn-add" onclick="addItem()">+ Add Item</button>
+      </div>
+
+      <div id="items-container">
+        <!-- Items injected by JS -->
+      </div>
+
+      <div class="total-bar">
+        <span class="total-label">Total Reimbursement (SGD)</span>
+        <span class="total-amount" id="grand-total">0.00</span>
+      </div>
+    </section>
+
+    <!-- Notes -->
+    <section class="card">
+      <h2>Notes</h2>
+      <textarea id="notes" rows="3" placeholder="Any additional notes for this claim…"></textarea>
+    </section>
+
+    <!-- Actions -->
+    <div class="actions">
+      <button class="btn-secondary" onclick="previewForm()">Refresh Preview</button>
+      <button class="btn-primary" onclick="generateExcel()">Download Excel</button>
+    </div>
+  </div>
+
+  <!-- RIGHT: Preview Panel -->
+  <div class="preview-panel">
+    <div class="preview-header">
+      <h2>Form Preview</h2>
+      <span class="preview-hint">Auto-updates as you type</span>
+    </div>
+    <div id="preview-content" class="preview-box">
+      <div class="preview-placeholder">Fill in the form to see a live preview</div>
+    </div>
+  </div>
+
+</div>
+
+<!-- Item template (hidden) -->
+<template id="item-template">
+  <div class="item-card" data-index="">
+    <div class="item-top">
+      <span class="item-num">Item <strong class="item-num-val">1</strong></span>
+      <button class="btn-remove" onclick="removeItem(this)">Remove</button>
+    </div>
+    <div class="form-row two-col">
+      <div class="field">
+        <label>Date <span class="req">*</span></label>
+        <input type="date" class="item-date" />
+      </div>
+      <div class="field">
+        <label>Description <span class="req">*</span></label>
+        <input type="text" class="item-desc" placeholder="e.g. Team lunch at Shake Shack" />
+      </div>
+    </div>
+    <div class="form-row two-col">
+      <div class="field">
+        <label>GST Amount (SGD)</label>
+        <input type="number" class="item-gst" min="0" step="0.01" placeholder="Leave blank if no GST" />
+      </div>
+      <div class="field">
+        <label>Total Amount (SGD) <span class="req">*</span></label>
+        <input type="number" class="item-total" min="0" step="0.01" placeholder="0.00" />
+      </div>
+    </div>
+    <div class="field">
+      <label>Supporting Documents</label>
+      <div class="upload-zone" onclick="triggerUpload(this)">
+        <input type="file" class="file-input" accept=".jpg,.jpeg,.png,.gif,.pdf,.webp,.heic,.msg,.docx" multiple style="display:none" onchange="handleFiles(this)" />
+        <div class="upload-prompt">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+          <span>Click to upload or drag &amp; drop</span>
+          <small>JPG, PNG, PDF, MSG, DOCX — max 50 MB each</small>
+        </div>
+        <div class="file-list"></div>
+      </div>
+    </div>
+  </div>
+</template>
+
+<script src="/static/js/app.js"></script>
+</body>
+</html>
