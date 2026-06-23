@@ -1,0 +1,210 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Ternary — Sign In</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@300;400;600;700&display=swap" rel="stylesheet">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --slate: #44546A; --slate2: #5a6f89; --gold: #FFC000;
+      --border: #C8CDD5; --text: #1C2A38; --muted: #7a8a9a;
+      --font: 'Century Gothic', 'Nunito', 'Gill Sans', sans-serif;
+    }
+    body {
+      font-family: var(--font);
+      background: #f0f2f6;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .login-wrap {
+      width: 400px;
+      max-width: 94vw;
+    }
+
+    /* Logo block */
+    .login-logo {
+      text-align: center;
+      margin-bottom: 32px;
+    }
+    .login-logo img {
+      height: 40px;
+      display: block;
+      margin: 0 auto 10px;
+    }
+    .login-logo-sub {
+      font-size: 11px;
+      color: var(--muted);
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+    }
+
+    /* Card */
+    .login-card {
+      background: #fff;
+      border: 1px solid var(--border);
+      box-shadow: 0 4px 24px rgba(68,84,106,0.12);
+      padding: 36px 36px 28px;
+    }
+
+    .login-card h1 {
+      font-size: 18px;
+      font-weight: 700;
+      color: var(--slate);
+      margin-bottom: 6px;
+      letter-spacing: 0.02em;
+    }
+    .login-card p {
+      font-size: 12.5px;
+      color: var(--muted);
+      margin-bottom: 28px;
+    }
+
+    .field { display: flex; flex-direction: column; gap: 6px; margin-bottom: 18px; }
+    .field label {
+      font-size: 11px;
+      font-weight: 700;
+      color: var(--slate);
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+    .field input {
+      border: 1px solid var(--border);
+      border-radius: 3px;
+      padding: 10px 12px;
+      font-family: var(--font);
+      font-size: 14px;
+      color: var(--text);
+      width: 100%;
+      transition: border-color 0.15s;
+    }
+    .field input:focus { outline: none; border-color: var(--slate); }
+
+    .error-msg {
+      background: #fdecea;
+      border: 1px solid #f5c6cb;
+      color: #721c24;
+      font-size: 12.5px;
+      padding: 9px 12px;
+      border-radius: 3px;
+      margin-bottom: 16px;
+      display: none;
+    }
+    .error-msg.show { display: block; }
+
+    .login-btn {
+      width: 100%;
+      background: var(--slate);
+      color: #fff;
+      border: none;
+      border-radius: 3px;
+      padding: 12px;
+      font-family: var(--font);
+      font-size: 14px;
+      font-weight: 700;
+      cursor: pointer;
+      letter-spacing: 0.04em;
+      transition: background 0.15s;
+      margin-top: 4px;
+    }
+    .login-btn:hover { background: var(--slate2); }
+    .login-btn:disabled { opacity: 0.6; cursor: not-allowed; }
+
+    /* Gold accent bar at top of card */
+    .login-card::before {
+      content: '';
+      display: block;
+      height: 4px;
+      background: var(--gold);
+      margin: -36px -36px 28px;
+    }
+
+    .login-footer {
+      text-align: center;
+      margin-top: 18px;
+      font-size: 11px;
+      color: var(--muted);
+    }
+  </style>
+</head>
+<body>
+
+<div class="login-wrap">
+  <div class="login-logo">
+    <img src="/static/logo.jpg" alt="Ternary" onerror="this.style.display='none'" />
+    <div class="login-logo-sub">Fund Management</div>
+  </div>
+
+  <div class="login-card">
+    <h1>Sign In</h1>
+    <p>Expense Claim Portal</p>
+
+    <div class="error-msg" id="err"></div>
+
+    <div class="field">
+      <label for="username">Username</label>
+      <input type="text" id="username" autocomplete="username" placeholder="Enter your username" />
+    </div>
+    <div class="field">
+      <label for="password">Password</label>
+      <input type="password" id="password" autocomplete="current-password" placeholder="Enter your password" />
+    </div>
+
+    <button class="login-btn" id="login-btn" onclick="doLogin()">Sign In</button>
+  </div>
+
+  <div class="login-footer">Ternary Fund Management Pte Ltd &nbsp;·&nbsp; UEN: 201902851Z</div>
+</div>
+
+<script>
+  document.getElementById('password').addEventListener('keydown', e => {
+    if (e.key === 'Enter') doLogin();
+  });
+
+  async function doLogin() {
+    const btn = document.getElementById('login-btn');
+    const err = document.getElementById('err');
+    const username = document.getElementById('username').value.trim();
+    const password = document.getElementById('password').value;
+
+    if (!username || !password) {
+      err.textContent = 'Please enter both username and password.';
+      err.classList.add('show');
+      return;
+    }
+
+    btn.disabled = true;
+    btn.textContent = 'Signing in…';
+    err.classList.remove('show');
+
+    try {
+      const res = await fetch('/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username: username.toLowerCase(), password })
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        err.textContent = data.error || 'Login failed.';
+        err.classList.add('show');
+        btn.disabled = false;
+        btn.textContent = 'Sign In';
+        return;
+      }
+      window.location.href = data.role === 'admin' ? '/admin' : '/';
+    } catch {
+      err.textContent = 'Server error. Is the app running?';
+      err.classList.add('show');
+      btn.disabled = false;
+      btn.textContent = 'Sign In';
+    }
+  }
+</script>
+</body>
+</html>
