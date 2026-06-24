@@ -28,7 +28,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     addItem();
     addItem();
   }
-  ['employee_name','claim_no','notes'].forEach(id => {
+  ['employee_name','claim_no','notes','currency'].forEach(id => {
     document.getElementById(id)?.addEventListener('input', renderPreview);
   });
   setupModalDragDrop();
@@ -69,6 +69,7 @@ async function loadEditMode(sid) {
   // Fill meta fields
   document.getElementById('employee_name').value = s.employee_name || '';
   document.getElementById('claim_no').value       = s.claim_no      || '';
+  document.getElementById('currency').value       = s.currency      || 'SGD';
   document.getElementById('period_from')._flatpickr?.setDate(s.period_from || '', false);
   document.getElementById('period_to')._flatpickr?.setDate(s.period_to   || '', false);
   document.getElementById('notes').value          = s.notes         || '';
@@ -300,7 +301,7 @@ function renderPreview() {
     <table class="prev-table">
       <thead><tr>
         <th style="width:72px">Date</th><th class="lft">Description</th>
-        <th style="width:64px">GST</th><th style="width:68px">Total (SGD)</th>
+        <th style="width:64px">GST</th><th style="width:68px">Total (${esc(v('currency')||'SGD')})</th>
       </tr></thead>
       <tbody>${rows||'<tr><td colspan="4" style="text-align:center;color:#aaa;padding:6px">—</td></tr>'}</tbody>
       <tfoot><tr class="tot">
@@ -374,6 +375,7 @@ function buildPayload() {
     period_from:   v('period_from') || document.getElementById('period_from').value,
     period_to:     v('period_to')   || document.getElementById('period_to').value,
     notes:         v('notes'),
+    currency:      (v('currency') || 'SGD').toUpperCase(),
     items:         items.map(i => ({ date:i.date, description:i.description, gst:i.gst, total:i.total })),
     attachments:   items.flatMap((i,idx) => i.files.map(f => ({ item_index:idx+1, description:i.description, ...f })))
   };
