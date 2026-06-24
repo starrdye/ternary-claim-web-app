@@ -593,6 +593,140 @@ body {
 .chip-rm:hover { color: #c0392b; }
 
 /* ═══════════════════════════════════════════════════
+   HISTORY DRAWER
+═══════════════════════════════════════════════════ */
+.hist-backdrop {
+  display: none;
+  position: fixed; inset: 0;
+  background: rgba(44,54,68,0.4);
+  z-index: 150;
+}
+.hist-backdrop.open { display: block; }
+
+.hist-drawer {
+  position: fixed;
+  top: 0; right: -500px;
+  width: 480px;
+  max-width: 96vw;
+  height: 100%;
+  background: #fff;
+  box-shadow: -4px 0 28px rgba(0,0,0,0.2);
+  z-index: 151;
+  display: flex;
+  flex-direction: column;
+  transition: right 0.25s cubic-bezier(0.25,0.46,0.45,0.94);
+}
+.hist-drawer.open { right: 0; }
+
+.hist-hdr {
+  display: flex; align-items: flex-start; justify-content: space-between;
+  padding: 14px 18px;
+  background: var(--slate);
+  color: #fff;
+  flex-shrink: 0;
+}
+.hist-hdr-title { font-size: 14px; font-weight: 700; }
+.hist-hdr-sub   { font-size: 11px; opacity: 0.65; margin-top: 2px; }
+.hist-close {
+  background: none; border: none;
+  color: rgba(255,255,255,0.65);
+  font-size: 22px; cursor: pointer; line-height: 1; padding: 0 2px;
+  flex-shrink: 0;
+}
+.hist-close:hover { color: #fff; }
+
+.hist-body {
+  flex: 1; overflow-y: auto;
+  padding: 12px 14px;
+  display: flex; flex-direction: column; gap: 9px;
+}
+.hist-empty {
+  text-align: center; margin-top: 60px;
+  color: var(--muted); font-size: 13px; font-style: italic;
+}
+
+/* Claim cards */
+.hc {
+  border: 1px solid var(--border-l);
+  border-radius: 4px;
+  overflow: hidden;
+  background: #fff;
+}
+.hc-top {
+  display: flex; align-items: flex-start; gap: 10px;
+  padding: 11px 12px;
+  cursor: pointer;
+  transition: background 0.1s;
+}
+.hc-top:hover { background: #f4f7fb; }
+.hc-left { flex: 1; min-width: 0; }
+.hc-row1 { display: flex; align-items: center; gap: 7px; flex-wrap: wrap; margin-bottom: 3px; }
+.hc-no   { font-weight: 700; font-size: 13px; color: var(--text); }
+.hc-period    { font-size: 11.5px; color: var(--muted); margin-bottom: 2px; }
+.hc-submitted { font-size: 11px;   color: var(--muted); }
+.hc-edited    { font-size: 10px; color: #856404; background: #fff3cd; border: 1px solid #ffc107; border-radius: 3px; padding: 1px 5px; }
+
+.hc-right  { display: flex; flex-direction: column; align-items: flex-end; gap: 5px; flex-shrink: 0; }
+.hc-amount { font-size: 13px; font-weight: 700; color: var(--slate); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.hc-actions { display: flex; gap: 5px; }
+.hc-btn {
+  background: #f0f4f9; border: 1px solid var(--border-l);
+  border-radius: 3px; color: var(--slate);
+  font-family: var(--font); font-size: 10.5px; font-weight: 700;
+  padding: 3px 8px; cursor: pointer;
+  display: inline-flex; align-items: center; gap: 4px;
+  transition: background 0.1s, color 0.1s;
+  white-space: nowrap;
+}
+.hc-btn:hover      { background: var(--slate); color: #fff; }
+.hc-btn.hc-dl      { background: #e8f5e9; color: #1b5e20; border-color: #a5d6a7; }
+.hc-btn.hc-dl:hover{ background: #2e7d32; color: #fff; border-color: #2e7d32; }
+
+.hc-chev { font-size: 16px; color: #bbb; align-self: center; flex-shrink: 0; transition: transform 0.2s; }
+.hc-chev.open { transform: rotate(90deg); }
+
+/* Status badges */
+.hb {
+  display: inline-block; border-radius: 3px; padding: 2px 7px;
+  font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em;
+}
+.hb-Pending  { background: #fff3cd; color: #856404; border: 1px solid #ffc10755; }
+.hb-Approved { background: #d4edda; color: #155724; border: 1px solid #28a74555; }
+.hb-Rejected { background: #f8d7da; color: #721c24; border: 1px solid #dc354555; }
+
+/* Expanded items */
+.hc-items {
+  border-top: 1px solid var(--border-l);
+  padding: 10px 12px 12px;
+  background: #f8f9fb;
+  display: none;
+}
+.hc-items.open { display: block; }
+.hci-table {
+  width: 100%; border-collapse: collapse; font-size: 11px; margin-bottom: 0;
+}
+.hci-table th {
+  background: var(--slate); color: #fff;
+  padding: 4px 7px; font-size: 10px; font-weight: 700;
+  text-align: left; border: 1px solid #2d3b4e;
+}
+.hci-table th.r { text-align: right; }
+.hci-table td {
+  padding: 3px 7px; border: 1px solid #d0d5dd;
+  background: #fff; vertical-align: middle;
+}
+.hci-table tr:nth-child(even) td { background: #f4f7fb; }
+.hci-table td.r { text-align: right; font-variant-numeric: tabular-nums; }
+.hci-table .hci-tot td {
+  font-weight: 700; color: var(--slate);
+  background: #eef2f7 !important;
+  border-top: 2px solid var(--slate);
+}
+.hci-table .hci-tot td:last-child { text-align: right; }
+.hci-empty { color: var(--muted); font-size: 12px; font-style: italic; }
+.hci-note  { margin-top: 8px; font-size: 11.5px; color: var(--text); }
+
+/* ═══════════════════════════════════════════════════
    PRINT — claim form only
    @page margin:0 suppresses browser auto-headers/footers
    (URL, date, page number that appear in the margin area)
@@ -607,7 +741,8 @@ body {
 
   /* Hide UI chrome */
   .topbar, .preview-panel, .add-row-wrap,
-  .upload-modal, .modal-back { display: none !important; }
+  .upload-modal, .modal-back,
+  .hist-backdrop, .hist-drawer { display: none !important; }
 
   /* Hide DOCS + DEL columns entirely (th AND td) */
   .th-docs, .th-del,
