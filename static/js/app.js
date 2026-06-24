@@ -4,6 +4,7 @@ let nextId = 1;
 let activeModalId = null;
 let currentUser = null;
 let editId = null;  // set when editing an existing submission
+let histSubs = {};  // id → submission, populated when history drawer opens
 
 /* ── Boot ───────────────────────────────────────────── */
 const FP_OPTS = {
@@ -400,6 +401,201 @@ function printReceipts() {
   });
   if (!pages.length) { alert('No image receipts attached. Please attach JPG or PNG files to your items first.'); return; }
   openReceiptWindow(pages, v('employee_name') || 'Claim');
+}
+
+/* ── History drawer ─────────────────────────────────── */
+async function showHistory() {
+  document.getElementById('history-backdrop').classList.add('open');
+  document.getElementById('history-drawer').classList.add('open');
+  const body = document.getElementById('hist-body');
+  body.innerHTML = '<div class="hist-empty">Loading…</div>';
+  try {
+    const res  = await fetch('/api/submissions');
+    const subs = await res.json();
+    histSubs = {};
+    subs.forEach(s => { histSubs[s.id] = s; });
+    const count = document.getElementById('hist-count');
+    if (!subs.length) {
+      body.innerHTML = '<div class="hist-empty">No claims submitted yet.</div>';
+      if (count) count.textContent = '';
+      return;
+    }
+    subs.sort((a, b) => (b.submitted_at||'').localeCompare(a.submitted_at||''));
+    if (count) count.textContent = `${subs.length} submission${subs.length !== 1 ? 's' : ''}`;
+    body.innerHTML = subs.map(s => histCard(s)).join('');
+  } catch {
+    body.innerHTML = '<div class="hist-empty">Could not load history.</div>';
+  }
+}
+
+function closeHistory() {
+  document.getElementById('history-backdrop').classList.remove('open');
+  document.getElementById('history-drawer').classList.remove('open');
+}
+
+function histCard(s) {
+  const fd  = d  => d  ? new Date(d+'T00:00:00').toLocaleDateString('en-GB',{day:'2-digit',month:'short',year:'numeric'}) : '—';
+  const fdt = dt => dt ? new Date(dt).toLocaleDateString('en-GB',{day:'2-digit',month:'short',year:'numeric'}) : '—';
+  const its    = (s.items||[]).filter(i => i.description || i.total);
+  const gTotal = its.reduce((a,i) => a+(parseFloat(i.total)||0), 0);
+  const amtStr = gTotal.toLocaleString('en-SG',{minimumFractionDigits:2,maximumFractionDigits:2});
+
+  const rows = its.map(i => `<tr>
+    <td>${fd(i.date)}</td>
+    <td>${esc(i.description||'—')}</td>
+    <td class="r">${i.gst ? parseFloat(i.gst).toFixed(2) : ''}</td>
+    <td class="r">${i.total ? parseFloat(i.total).toFixed(2) : ''}</td>
+  </tr>`).join('');
+
+  const editedNote = s.last_edited_at
+    ? `<span class="hc-edited">Edited ${fdt(s.last_edited_at)}</span>` : '';
+
+  const itemsHtml = its.length
+    ? `<table class="hci-table">
+        <thead><tr>
+          <th style="width:76px">Date</th>
+          <th>Description</th>
+          <th class="r" style="width:62px">GST</th>
+          <th class="r" style="width:72px">Total</th>
+        </tr></thead>
+        <tbody>${rows}</tbody>
+        <tfoot><tr class="hci-tot">
+          <td colspan="3">Total Reimbursement</td>
+          <td class="r">${gTotal.toFixed(2)}</td>
+        </tr></tfoot>
+      </table>`
+    : '<div class="hci-empty">No items recorded</div>';
+
+  return `<div class="hc">
+    <div class="hc-top" onclick="toggleHistItem('${s.id}')">
+      <div class="hc-left">
+        <div class="hc-row1">
+          <span class="hc-no">Claim #${esc(s.claim_no||s.id)}</span>
+          <span class="hb hb-${s.status}">${s.status}</span>
+          ${editedNote}
+        </div>
+        <div class="hc-period">Period: ${fd(s.period_from)} – ${fd(s.period_to)}</div>
+        <div class="hc-submitted">Submitted ${fdt(s.submitted_at)}</div>
+      </div>
+      <div class="hc-right">
+        <div class="hc-amount">SGD ${amtStr}</div>
+        <div class="hc-actions" onclick="event.stopPropagation()">
+          <button class="hc-btn" onclick="printHistForm('${s.id}')">
+            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg>
+            Print
+          </button>
+          <button class="hc-btn hc-dl" onclick="dlHistExcel('${s.id}')">
+            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+            Excel
+          </button>
+        </div>
+      </div>
+      <div class="hc-chev" id="chev-${s.id}">›</div>
+    </div>
+    <div class="hc-items" id="hci-${s.id}">
+      ${itemsHtml}
+      ${s.notes ? `<div class="hci-note"><strong>Note:</strong> ${esc(s.notes)}</div>` : ''}
+    </div>
+  </div>`;
+}
+
+function toggleHistItem(id) {
+  document.getElementById(`hci-${id}`)?.classList.toggle('open');
+  document.getElementById(`chev-${id}`)?.classList.toggle('open');
+}
+
+function printHistForm(sid) {
+  const s = histSubs[sid];
+  if (!s) return;
+  const fd  = d => d ? new Date(d+'T00:00:00').toLocaleDateString('en-GB',{day:'2-digit',month:'short',year:'numeric'}) : '—';
+  const fn  = n => n ? parseFloat(n).toFixed(2) : '';
+  const its = (s.items||[]).filter(i => i.description || i.total);
+  const tot = its.reduce((a,i) => a+(parseFloat(i.total)||0), 0);
+  const rows = its.map(i => `<tr>
+    <td style="text-align:center;border:1px solid #000;padding:4px 6px">${fd(i.date)}</td>
+    <td style="border:1px solid #000;padding:4px 8px">${esc(i.description||'')}</td>
+    <td style="text-align:right;border:1px solid #000;padding:4px 6px">${fn(i.gst)}</td>
+    <td style="text-align:right;border:1px solid #000;padding:4px 6px">${fn(i.total)}</td>
+  </tr>`).join('');
+  const win = window.open('', '_blank', 'width=900,height=800');
+  if (!win) { alert('Please allow pop-ups to print.'); return; }
+  win.document.write(`<!DOCTYPE html><html><head><meta charset="UTF-8">
+<title>Claim — ${esc(s.employee_name)}</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:'Century Gothic','Gill Sans MT',sans-serif;font-size:11pt;padding:36px 40px;background:#fff;color:#000}
+.logo{height:28px;margin-bottom:20px}
+.meta{display:flex;justify-content:space-between;margin-bottom:16px}
+.meta-left .row{margin-bottom:6px}
+.meta-left .key{font-size:9pt}
+.meta-left .val{border-bottom:1px solid #666;display:inline-block;min-width:160px;padding:0 4px}
+.pb{border:1px solid #000;text-align:center;padding:2px 8px;display:inline-block;min-width:90px}
+.pt{font-weight:700;text-align:center;margin-bottom:4px}
+.pr{display:flex;gap:8px}
+table{width:100%;border-collapse:collapse;margin-bottom:12px}
+th{background:#44546A;color:#fff;padding:5px 8px;font-size:9pt;text-align:left;border:1px solid #000}
+th.c{text-align:center}th.r{text-align:right}
+.sig{display:flex;gap:40px;margin:24px 0 16px}
+.sig-block .line{border-bottom:1px solid #000;width:160px;height:28px;margin-bottom:4px}
+.sig-block .lbl{font-size:9pt}
+.footer{margin-top:32px;border-top:1px solid #ccc;padding-top:8px;font-size:8pt;color:#555}
+@page{margin:0}@media print{body{padding:8mm 10mm}}
+</style></head><body>
+<img src="/static/logo.jpg" class="logo" />
+<div class="meta">
+  <div class="meta-left">
+    <div class="row"><span class="key">Employee's Name:</span> <span class="val">${esc(s.employee_name)}</span></div>
+    <div class="row"><span class="key">Claim Form no.:</span> <span class="val">${esc(s.claim_no||'')}</span></div>
+  </div>
+  <div class="meta-right">
+    <div class="pt">CLAIM PERIOD</div>
+    <div class="pr">
+      <div><div style="text-align:center;font-size:9pt">FROM</div><div class="pb">${fd(s.period_from)}</div></div>
+      <div><div style="text-align:center;font-size:9pt">TO</div><div class="pb">${fd(s.period_to)}</div></div>
+    </div>
+  </div>
+</div>
+<table>
+  <thead><tr>
+    <th class="c" style="width:90px">DATE</th>
+    <th>DESCRIPTION</th>
+    <th class="r" style="width:110px">GST amount on each bill</th>
+    <th class="r" style="width:100px">TOTAL (SGD)</th>
+  </tr></thead>
+  <tbody>${rows}</tbody>
+  <tfoot><tr>
+    <td colspan="3" style="text-align:right;border:1px solid #000;padding:5px 8px;font-weight:700;border-top:2px solid #000">Total Reimbursement</td>
+    <td style="text-align:right;border:1px solid #000;padding:5px 8px;font-weight:700;border-top:2px solid #000">${tot.toFixed(2)}</td>
+  </tr></tfoot>
+</table>
+<div class="sig">
+  <div class="sig-block"><div class="line"></div><div class="lbl">Received by &nbsp;&nbsp; Date ___________</div></div>
+  <div class="sig-block"><div class="line"></div><div class="lbl">Approved by &nbsp;&nbsp; Date ___________</div></div>
+</div>
+${s.notes ? `<p style="margin-bottom:8px"><strong>Note:</strong> ${esc(s.notes)}</p>` : ''}
+<div class="footer">
+  <strong>Ternary Fund Management Pte Ltd</strong> &nbsp;·&nbsp; UEN: 201902851Z<br>
+  50 Armenian Street #02-04 Wilmer Place, Singapore 179938 &nbsp;·&nbsp; +65 6970 6272 &nbsp;·&nbsp; admin@ternaryfmc.com
+</div>
+<script>window.onload=function(){window.print();}<\/script>
+</body></html>`);
+  win.document.close();
+}
+
+async function dlHistExcel(sid) {
+  const s = histSubs[sid];
+  if (!s) return;
+  try {
+    const res  = await fetch('/api/generate-excel', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(s) });
+    if (!res.ok) throw new Error();
+    const blob = await res.blob();
+    const url  = URL.createObjectURL(blob);
+    const a    = document.createElement('a');
+    a.href = url;
+    a.download = res.headers.get('Content-Disposition')?.match(/filename="(.+)"/)?.[1] || 'claim.xlsx';
+    a.click();
+    URL.revokeObjectURL(url);
+  } catch { alert('Failed to generate Excel.'); }
 }
 
 function openReceiptWindow(pages, title) {
