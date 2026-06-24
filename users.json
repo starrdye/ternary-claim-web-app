@@ -1,0 +1,32 @@
+[
+  {
+    "username": "admin",
+    "password": "240be518fabd2724ddb6f04eeb1da5967448d7e831c08c8fa822809f74c720a9",
+    "role": "admin",
+    "display_name": "Admin"
+  },
+  {
+    "username": "xingye",
+    "password": "bd94dcda26fccb4e68d6a31f9b5aac0b571ae266d822620e901ef7ebe3a11d4f",
+    "role": "employee",
+    "display_name": "Xingye, Zhou"
+  },
+  {
+    "username": "peter",
+    "password": "bd94dcda26fccb4e68d6a31f9b5aac0b571ae266d822620e901ef7ebe3a11d4f",
+    "role": "employee",
+    "display_name": "Peter Tan"
+  },
+  {
+    "username": "jason",
+    "password": "bd94dcda26fccb4e68d6a31f9b5aac0b571ae266d822620e901ef7ebe3a11d4f",
+    "role": "employee",
+    "display_name": "Jason Chan"
+  },
+  {
+    "username": "mary",
+    "password": "bd94dcda26fccb4e68d6a31f9b5aac0b571ae266d822620e901ef7ebe3a11d4f",
+    "role": "employee",
+    "display_name": "Mary"
+  }
+]
