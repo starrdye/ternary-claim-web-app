@@ -209,6 +209,40 @@ def get_submission(sid):
     return jsonify(rec)
 
 
+@app.route('/api/submissions/<sid>', methods=['PUT'])
+@admin_required
+def update_submission(sid):
+    data = request.get_json()
+    if not data:
+        return jsonify({'error': 'No data'}), 400
+    subs = _load_submissions()
+    rec = next((s for s in subs if s['id'] == sid), None)
+    if not rec:
+        return jsonify({'error': 'Not found'}), 404
+    total = sum(float(it.get('total') or 0) for it in data.get('items', []) if it.get('total'))
+    rec.update({
+        'employee_name': data.get('employee_name', rec['employee_name']),
+        'claim_no':      data.get('claim_no',      rec['claim_no']),
+        'period_from':   data.get('period_from',   rec['period_from']),
+        'period_to':     data.get('period_to',     rec['period_to']),
+        'total':         round(total, 2),
+        'notes':         data.get('notes',         rec.get('notes', '')),
+        'items':         data.get('items',         rec['items']),
+        'attachments':   data.get('attachments',   rec.get('attachments', [])),
+        'last_edited_at': datetime.now().isoformat(timespec='seconds'),
+        'last_edited_by': session['username'],
+    })
+    _save_submissions(subs)
+    return jsonify({'id': sid})
+
+
+@app.route('/api/users', methods=['GET'])
+@admin_required
+def list_users():
+    users = _load_users()
+    return jsonify([{'username': u['username'], 'display_name': u['display_name']} for u in users])
+
+
 @app.route('/api/submissions/<sid>/status', methods=['PATCH'])
 @admin_required
 def update_status(sid):
