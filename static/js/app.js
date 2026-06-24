@@ -6,7 +6,19 @@ let currentUser = null;
 let editId = null;  // set when editing an existing submission
 
 /* ── Boot ───────────────────────────────────────────── */
+const FP_OPTS = {
+  dateFormat: 'Y-m-d',   // internal value always yyyy-mm-dd (API format)
+  altInput:   true,
+  altFormat:  'd/m/Y',   // visible display dd/mm/yyyy
+  allowInput: false,
+  disableMobile: true,
+};
+
 document.addEventListener('DOMContentLoaded', async () => {
+  // Period date pickers
+  flatpickr('#period_from', { ...FP_OPTS, altInputClass: 'meta-date', onChange: () => renderPreview() });
+  flatpickr('#period_to',   { ...FP_OPTS, altInputClass: 'meta-date', onChange: () => renderPreview() });
+
   await loadUser();
   const sid = new URLSearchParams(location.search).get('edit');
   if (sid) {
@@ -15,7 +27,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     addItem();
     addItem();
   }
-  ['employee_name','claim_no','period_from','period_to','notes'].forEach(id => {
+  ['employee_name','claim_no','notes'].forEach(id => {
     document.getElementById(id)?.addEventListener('input', renderPreview);
   });
   setupModalDragDrop();
@@ -56,8 +68,8 @@ async function loadEditMode(sid) {
   // Fill meta fields
   document.getElementById('employee_name').value = s.employee_name || '';
   document.getElementById('claim_no').value       = s.claim_no      || '';
-  document.getElementById('period_from').value    = s.period_from   || '';
-  document.getElementById('period_to').value      = s.period_to     || '';
+  document.getElementById('period_from')._flatpickr?.setDate(s.period_from || '', false);
+  document.getElementById('period_to')._flatpickr?.setDate(s.period_to   || '', false);
   document.getElementById('notes').value          = s.notes         || '';
 
   // Add items with pre-filled values
@@ -70,10 +82,10 @@ async function loadEditMode(sid) {
     it.gst  = item.gst  || ''; it.total       = item.total       || '';
     const tr = document.querySelector(`#items-tbody tr[data-id="${it.id}"]`);
     if (tr) {
-      tr.querySelector('input[type="date"]').value             = item.date        || '';
-      tr.querySelector('.desc-in').value                       = item.description || '';
-      tr.querySelectorAll('input[type="number"]')[0].value     = item.gst         || '';
-      tr.querySelectorAll('input[type="number"]')[1].value     = item.total       || '';
+      if (it._fp && item.date) it._fp.setDate(item.date, false);
+      tr.querySelector('.desc-in').value                   = item.description || '';
+      tr.querySelectorAll('input[type="number"]')[0].value = item.gst         || '';
+      tr.querySelectorAll('input[type="number"]')[1].value = item.total       || '';
     }
     // Restore attachments for this item
     (s.attachments || []).filter(a => a.item_index === idx + 1).forEach(att => {
@@ -100,12 +112,12 @@ async function loadEditMode(sid) {
 /* ── Items ──────────────────────────────────────────── */
 function addItem() {
   const id = nextId++;
-  items.push({ id, date:'', description:'', gst:'', total:'', files:[] });
+  items.push({ id, date:'', description:'', gst:'', total:'', files:[], _fp: null });
 
   const tr = document.createElement('tr');
   tr.dataset.id = id;
   tr.innerHTML = `
-    <td><input class="cell-in" type="date" /></td>
+    <td><input class="cell-in date-in" type="text" placeholder="dd/mm/yyyy" readonly /></td>
     <td><input class="cell-in desc-in" type="text" placeholder="Description" /></td>
     <td><input class="cell-in" type="number" min="0" step="0.01" placeholder="—" /></td>
     <td><input class="cell-in" type="number" min="0" step="0.01" placeholder="0.00" /></td>
@@ -116,12 +128,20 @@ function addItem() {
     </td>
     <td class="td-del"><button class="del-btn" onclick="removeItem(this)" title="Remove row">×</button></td>`;
 
-  tr.querySelector('input[type="date"]').addEventListener('input',   e => { getItem(id).date        = e.target.value; renderPreview(); });
-  tr.querySelector('.desc-in')          .addEventListener('input',   e => { getItem(id).description = e.target.value; renderPreview(); });
-  tr.querySelectorAll('input[type="number"]')[0].addEventListener('input', e => { getItem(id).gst   = e.target.value; renderPreview(); });
-  tr.querySelectorAll('input[type="number"]')[1].addEventListener('input', e => { getItem(id).total = e.target.value; recalcTotal(); renderPreview(); });
-
   document.getElementById('items-tbody').appendChild(tr);
+
+  // Flatpickr date picker — altInput shows dd/mm/yyyy, hidden input stores yyyy-mm-dd
+  const fp = flatpickr(tr.querySelector('.date-in'), {
+    ...FP_OPTS,
+    altInputClass: 'cell-in',
+    onChange: (_, str) => { getItem(id).date = str; renderPreview(); }
+  });
+  getItem(id)._fp = fp;
+
+  tr.querySelector('.desc-in')                          .addEventListener('input', e => { getItem(id).description = e.target.value; renderPreview(); });
+  tr.querySelectorAll('input[type="number"]')[0]        .addEventListener('input', e => { getItem(id).gst         = e.target.value; renderPreview(); });
+  tr.querySelectorAll('input[type="number"]')[1]        .addEventListener('input', e => { getItem(id).total       = e.target.value; recalcTotal(); renderPreview(); });
+
   renderPreview();
 }
 
@@ -398,7 +418,7 @@ body{background:#fff;font-family:'Century Gothic',sans-serif}
 .rpage{position:relative;width:100vw;height:100vh;display:flex;align-items:center;justify-content:center;overflow:hidden;background:#fff}
 .rimg{max-width:100%;max-height:100%;object-fit:contain}
 .rwm{position:absolute;bottom:24px;right:28px;font-size:12pt;font-weight:700;color:rgba(0,0,0,0.32);text-align:right;max-width:60%}
-@media print{.rpage{width:100%;height:100vh}}
+@page{margin:0}@media print{.rpage{width:100%;height:100vh}}
 </style></head><body>${html}
 <script>window.onload=function(){window.print();}<\/script>
 </body></html>`);
