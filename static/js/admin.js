@@ -125,6 +125,8 @@ async function openDrawer(id) {
 
   const res = await fetch(`/api/submissions/${id}`);
   const s   = await res.json();
+  const editLink = document.getElementById('edit-claim-link');
+  if (editLink) editLink.href = `/?edit=${id}`;
   renderDrawer(s);
 }
 
