@@ -179,6 +179,7 @@ def submit_claim():
         'period_from': data.get('period_from', ''),
         'period_to': data.get('period_to', ''),
         'total': round(total, 2),
+        'currency': data.get('currency', 'SGD'),
         'notes': data.get('notes', ''),
         'items': data.get('items', []),
         'attachments': data.get('attachments', []),
@@ -226,6 +227,7 @@ def update_submission(sid):
         'period_from':   data.get('period_from',   rec['period_from']),
         'period_to':     data.get('period_to',     rec['period_to']),
         'total':         round(total, 2),
+        'currency':      data.get('currency',      rec.get('currency', 'SGD')),
         'notes':         data.get('notes',         rec.get('notes', '')),
         'items':         data.get('items',         rec['items']),
         'attachments':   data.get('attachments',   rec.get('attachments', [])),
@@ -404,7 +406,8 @@ def _build_workbook(data):
     ws['C12'].alignment = Alignment(horizontal='center', vertical='center', wrap_text=True)
     ws['C12'].border = b_all
 
-    ws['D12'] = 'TOTAL (SGD)'
+    currency = data.get('currency', 'SGD')
+    ws['D12'] = f'TOTAL ({currency})'
     ws['D12'].font = fb
     ws['D12'].alignment = Alignment(horizontal='center', vertical='center')
     ws['D12'].border = b_all
