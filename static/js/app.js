@@ -3,12 +3,18 @@ let items = [];
 let nextId = 1;
 let activeModalId = null;
 let currentUser = null;
+let editId = null;  // set when editing an existing submission
 
 /* ── Boot ───────────────────────────────────────────── */
 document.addEventListener('DOMContentLoaded', async () => {
   await loadUser();
-  addItem();
-  addItem();
+  const sid = new URLSearchParams(location.search).get('edit');
+  if (sid) {
+    await loadEditMode(sid);
+  } else {
+    addItem();
+    addItem();
+  }
   ['employee_name','claim_no','period_from','period_to','notes'].forEach(id => {
     document.getElementById(id)?.addEventListener('input', renderPreview);
   });
@@ -20,14 +26,75 @@ async function loadUser() {
     const res  = await fetch('/api/me');
     currentUser = await res.json();
     document.getElementById('tb-user').textContent = currentUser.display_name;
-    // Pre-fill employee name from session
-    const nameEl = document.getElementById('employee_name');
-    if (nameEl && !nameEl.value) nameEl.value = currentUser.display_name;
-    // Show admin link if admin
     if (currentUser.role === 'admin') {
       document.getElementById('admin-link').style.display = '';
+      await loadEmployeeAutocomplete();
+    } else {
+      const nameEl = document.getElementById('employee_name');
+      if (nameEl && !nameEl.value) nameEl.value = currentUser.display_name;
     }
   } catch { /* session expired — server will redirect */ }
+}
+
+async function loadEmployeeAutocomplete() {
+  try {
+    const res   = await fetch('/api/users');
+    const users = await res.json();
+    const dl    = document.getElementById('employee-list');
+    if (!dl) return;
+    dl.innerHTML = users.map(u => `<option value="${esc(u.display_name)}">`).join('');
+  } catch { /* ignore */ }
+}
+
+/* ── Edit mode ──────────────────────────────────────── */
+async function loadEditMode(sid) {
+  const res = await fetch(`/api/submissions/${sid}`);
+  if (!res.ok) { alert('Could not load submission for editing.'); return; }
+  const s = await res.json();
+  editId = sid;
+
+  // Fill meta fields
+  document.getElementById('employee_name').value = s.employee_name || '';
+  document.getElementById('claim_no').value       = s.claim_no      || '';
+  document.getElementById('period_from').value    = s.period_from   || '';
+  document.getElementById('period_to').value      = s.period_to     || '';
+  document.getElementById('notes').value          = s.notes         || '';
+
+  // Add items with pre-filled values
+  const savedItems = (s.items || []);
+  if (!savedItems.length) { addItem(); addItem(); }
+  savedItems.forEach((item, idx) => {
+    addItem();
+    const it = items[items.length - 1];
+    it.date = item.date || ''; it.description = item.description || '';
+    it.gst  = item.gst  || ''; it.total       = item.total       || '';
+    const tr = document.querySelector(`#items-tbody tr[data-id="${it.id}"]`);
+    if (tr) {
+      tr.querySelector('input[type="date"]').value             = item.date        || '';
+      tr.querySelector('.desc-in').value                       = item.description || '';
+      tr.querySelectorAll('input[type="number"]')[0].value     = item.gst         || '';
+      tr.querySelectorAll('input[type="number"]')[1].value     = item.total       || '';
+    }
+    // Restore attachments for this item
+    (s.attachments || []).filter(a => a.item_index === idx + 1).forEach(att => {
+      it.files.push({ filename: att.filename, original_name: att.original_name, url: att.url });
+    });
+    updateBadge(it.id);
+  });
+
+  recalcTotal();
+  renderPreview();
+
+  // Update UI to show edit context
+  const goldBtn = document.querySelector('.tb-btn.tb-gold');
+  if (goldBtn) { goldBtn.innerHTML = goldBtn.innerHTML.replace('Submit Claim', 'Save Changes'); }
+  document.title = `Edit — ${s.employee_name}`;
+
+  // Show edit banner below topbar
+  const banner = document.createElement('div');
+  banner.style.cssText = 'background:#fff3cd;color:#856404;font-size:12px;font-weight:600;padding:6px 18px;text-align:center;border-bottom:1px solid #ffc107';
+  banner.innerHTML = `Editing submission <strong>${sid}</strong> — <a href="/admin" style="color:#856404">Back to Admin</a>`;
+  document.querySelector('.topbar').after(banner);
 }
 
 /* ── Items ──────────────────────────────────────────── */
@@ -242,22 +309,25 @@ async function submitClaim() {
   if (!v('employee_name')) { alert('Please enter the employee name.'); return; }
   if (!items.some(i => i.description || i.total)) { alert('Please add at least one item.'); return; }
   const payload = buildPayload();
+  const url    = editId ? `/api/submissions/${editId}` : '/api/submit';
+  const method = editId ? 'PUT' : 'POST';
   try {
-    const res  = await fetch('/api/submit', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload) });
+    const res = await fetch(url, { method, headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload) });
     if (!res.ok) throw new Error();
     const { id } = await res.json();
+    const isEdit = !!editId;
     document.querySelector('.a4-sheet').innerHTML = `
       <div style="text-align:center;padding:64px 20px">
-        <div style="font-size:48px;margin-bottom:16px">✅</div>
-        <div style="font-size:20px;font-weight:700;color:var(--slate);margin-bottom:8px">Claim Submitted</div>
+        <div style="font-size:48px;margin-bottom:16px">${isEdit ? '✏️' : '✅'}</div>
+        <div style="font-size:20px;font-weight:700;color:var(--slate);margin-bottom:8px">${isEdit ? 'Changes Saved' : 'Claim Submitted'}</div>
         <div style="font-size:13px;color:var(--muted);margin-bottom:6px">Reference: <strong style="color:var(--text)">${id}</strong></div>
-        <div style="font-size:13px;color:var(--muted);margin-bottom:28px">Finance will review and update the status.</div>
+        <div style="font-size:13px;color:var(--muted);margin-bottom:28px">${isEdit ? 'The claim has been updated.' : 'Finance will review and update the status.'}</div>
         <div style="display:flex;gap:12px;justify-content:center">
           <a href="/" style="background:var(--slate);color:#fff;padding:10px 22px;border-radius:3px;text-decoration:none;font-weight:700;font-size:13px">New Claim</a>
-          ${currentUser?.role==='admin'?'<a href="/admin" style="background:var(--gold);color:var(--slate);padding:10px 22px;border-radius:3px;text-decoration:none;font-weight:700;font-size:13px">Admin View</a>':''}
+          <a href="/admin" style="background:var(--gold);color:var(--slate);padding:10px 22px;border-radius:3px;text-decoration:none;font-weight:700;font-size:13px">Admin View</a>
         </div>
       </div>`;
-  } catch { alert('Submission failed. Is the server running?'); }
+  } catch { alert(editId ? 'Save failed. Is the server running?' : 'Submission failed. Is the server running?'); }
 }
 
 /* ── Download Excel ─────────────────────────────────── */
