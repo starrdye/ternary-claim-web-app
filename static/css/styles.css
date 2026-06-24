@@ -233,11 +233,11 @@ body {
   opacity: 0.85;
 }
 
-/* Column widths matching Excel proportions */
-.th-date  { width: 96px; }
+/* Column widths matching Excel proportions (A=17.58, B=44.25, C=25.83, D+E=28.66) */
+.th-date  { width: 15%; }
 .th-desc  { }             /* flex */
-.th-gst   { width: 96px; }
-.th-total { width: 100px; }
+.th-gst   { width: 22%; }
+.th-total { width: 24%; }
 .th-docs  { width: 44px; }
 .th-del   { width: 26px; border-color: transparent !important; background: transparent !important; }
 
@@ -594,40 +594,58 @@ body {
 
 /* ═══════════════════════════════════════════════════
    PRINT — claim form only
+   @page margin:0 suppresses browser auto-headers/footers
+   (URL, date, page number that appear in the margin area)
 ═══════════════════════════════════════════════════ */
 @media print {
+  @page {
+    size: A4 portrait;
+    margin: 0;          /* removes browser header/footer area */
+  }
+
   body { background: #fff; }
-  .topbar,
-  .preview-panel,
-  .add-row-wrap,
-  .td-docs,
-  .td-del,
-  .upload-modal,
-  .modal-back { display: none !important; }
-  .page-layout {
-    display: block;
-    height: auto;
-    overflow: visible;
-  }
-  .form-panel {
-    overflow: visible;
-    height: auto;
-    padding: 0;
-  }
+
+  /* Hide UI chrome */
+  .topbar, .preview-panel, .add-row-wrap,
+  .upload-modal, .modal-back { display: none !important; }
+
+  /* Hide DOCS + DEL columns entirely (th AND td) */
+  .th-docs, .th-del,
+  .td-docs, .td-del { display: none !important; }
+  .claim-table tfoot td:last-child { display: none !important; }
+
+  /* Layout: single-column, full width */
+  .page-layout { display: block; height: auto; overflow: visible; }
+  .form-panel  { overflow: visible; height: auto; padding: 0; }
+
+  /* A4 sheet — replace screen padding with print padding */
   .a4-sheet {
     box-shadow: none;
-    padding: 20px 24px;
+    padding: 14mm 16mm;     /* own margins since @page margin is 0 */
     max-width: 100%;
     width: 100%;
   }
-  .claim-table th.th-docs,
-  .claim-table th:last-child { display: none; }
-  .cell-in, .meta-val, .meta-date, .note-input {
+
+  /* Preserve slate header background when printing */
+  .claim-table th {
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  /* Remove hover/stripe backgrounds for clean print */
+  .claim-table tbody tr:nth-child(even) td { background: transparent !important; }
+  .claim-table tbody tr:hover td { background: transparent !important; }
+
+  /* Strip browser input styling — inputs look like plain text */
+  .cell-in, .meta-val, .meta-date, .flatpickr-input, .note-input {
     border: none !important;
     outline: none !important;
     background: transparent !important;
+    -webkit-appearance: none;
+    appearance: none;
   }
-  .meta-val { border-bottom: 1px solid #999 !important; }
+  .meta-val { border-bottom: 1px solid #888 !important; }
+  .meta-date { border: 1px solid #000 !important; text-align: center; }
 }
 
 /* ═══════════════════════════════════════════════════
