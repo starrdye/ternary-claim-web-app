@@ -249,6 +249,131 @@ async function setStatus(status) {
   showToast(`Status updated to ${status}`);
 }
 
+/* ── Print Form from drawer ─────────────────────────── */
+async function adminPrintForm() {
+  if (!activeId) return;
+  const s = allSubmissions.find(x => x.id === activeId);
+  if (!s) return;
+
+  const fd    = d => d ? new Date(d+'T00:00:00').toLocaleDateString('en-GB',{day:'2-digit',month:'short',year:'numeric'}) : '—';
+  const fn    = n => n ? parseFloat(n).toFixed(2) : '';
+  const its   = (s.items || []).filter(i => i.description || i.total);
+  const total = its.reduce((a, i) => a + (parseFloat(i.total)||0), 0);
+
+  const rows = its.map(i => `<tr>
+    <td style="text-align:center;border:1px solid #000;padding:4px 6px">${fd(i.date)}</td>
+    <td style="border:1px solid #000;padding:4px 8px">${esc(i.description||'')}</td>
+    <td style="text-align:right;border:1px solid #000;padding:4px 6px">${fn(i.gst)}</td>
+    <td style="text-align:right;border:1px solid #000;padding:4px 6px">${fn(i.total)}</td>
+  </tr>`).join('');
+
+  const win = window.open('', '_blank', 'width=900,height=800');
+  if (!win) { alert('Please allow pop-ups to print.'); return; }
+  win.document.write(`<!DOCTYPE html><html><head><meta charset="UTF-8">
+<title>Claim — ${esc(s.employee_name)}</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:'Century Gothic','Gill Sans MT',sans-serif;font-size:11pt;padding:36px 40px;background:#fff;color:#000}
+.logo{height:28px;margin-bottom:20px}
+.meta{display:flex;justify-content:space-between;margin-bottom:16px}
+.meta-left .row{margin-bottom:6px}
+.meta-left .key{font-size:9pt}
+.meta-left .val{border-bottom:1px solid #666;display:inline-block;min-width:160px;padding:0 4px}
+.period-box{border:1px solid #000;text-align:center;padding:2px 8px;display:inline-block;min-width:90px}
+.period-title{font-weight:700;text-align:center;margin-bottom:4px}
+.period-row{display:flex;gap:8px}
+table{width:100%;border-collapse:collapse;margin-bottom:12px}
+th{background:#44546A;color:#fff;padding:5px 8px;font-size:9pt;text-align:left;border:1px solid #000}
+th.c{text-align:center} th.r{text-align:right}
+.sig{display:flex;gap:40px;margin:24px 0 16px}
+.sig-block .line{border-bottom:1px solid #000;width:160px;height:28px;margin-bottom:4px}
+.sig-block .lbl{font-size:9pt}
+.footer{margin-top:32px;border-top:1px solid #ccc;padding-top:8px;font-size:8pt;color:#555}
+@media print{body{padding:0}}
+</style></head><body>
+<img src="/static/logo.jpg" class="logo" />
+<div class="meta">
+  <div class="meta-left">
+    <div class="row"><span class="key">Employee's Name:</span> <span class="val">${esc(s.employee_name)}</span></div>
+    <div class="row"><span class="key">Claim Form no.:</span> <span class="val">${esc(s.claim_no||'')}</span></div>
+  </div>
+  <div class="meta-right">
+    <div class="period-title">CLAIM PERIOD</div>
+    <div class="period-row">
+      <div><div style="text-align:center;font-size:9pt">FROM</div><div class="period-box">${fd(s.period_from)}</div></div>
+      <div><div style="text-align:center;font-size:9pt">TO</div><div class="period-box">${fd(s.period_to)}</div></div>
+    </div>
+  </div>
+</div>
+<table>
+  <thead><tr>
+    <th class="c" style="width:90px">DATE</th>
+    <th>DESCRIPTION</th>
+    <th class="r" style="width:110px">GST amount on each bill</th>
+    <th class="r" style="width:100px">TOTAL (SGD)</th>
+  </tr></thead>
+  <tbody>${rows}</tbody>
+  <tfoot><tr>
+    <td colspan="3" style="text-align:right;border:1px solid #000;padding:5px 8px;font-weight:700;border-top:2px solid #000">Total Reimbursement</td>
+    <td style="text-align:right;border:1px solid #000;padding:5px 8px;font-weight:700;border-top:2px solid #000">${total.toFixed(2)}</td>
+  </tr></tfoot>
+</table>
+<div class="sig">
+  <div class="sig-block"><div class="line"></div><div class="lbl">Received by &nbsp;&nbsp; Date ___________</div></div>
+  <div class="sig-block"><div class="line"></div><div class="lbl">Approved by &nbsp;&nbsp; Date ___________</div></div>
+</div>
+${s.notes ? `<p style="margin-bottom:8px"><strong>Note:</strong> ${esc(s.notes)}</p>` : ''}
+<div class="footer">
+  <strong>Ternary Fund Management Pte Ltd</strong> &nbsp;·&nbsp; UEN: 201902851Z<br>
+  50 Armenian Street #02-04 Wilmer Place, Singapore 179938 &nbsp;·&nbsp; +65 6970 6272 &nbsp;·&nbsp; admin@ternaryfmc.com
+</div>
+<script>window.onload=function(){window.print();}<\/script>
+</body></html>`);
+  win.document.close();
+}
+
+/* ── Print Receipts from drawer ──────────────────────── */
+async function adminPrintReceipts() {
+  if (!activeId) return;
+  const s = allSubmissions.find(x => x.id === activeId);
+  if (!s) return;
+
+  const IMAGE_EXTS = new Set(['jpg','jpeg','png','gif','webp','heic']);
+  const pages = [];
+  (s.attachments || []).forEach(att => {
+    const ext = (att.original_name || '').split('.').pop().toLowerCase();
+    if (!IMAGE_EXTS.has(ext)) return;
+    const itemIdx = (att.item_index || 1) - 1;
+    const item    = (s.items || [])[itemIdx] || {};
+    const desc    = att.description || item.description || '';
+    const amount  = item.total ? '  —  SGD ' + parseFloat(item.total).toFixed(2) : '';
+    pages.push({ url: att.url, label: desc + amount });
+  });
+
+  if (!pages.length) { alert('No image receipts in this submission.'); return; }
+
+  const win = window.open('', '_blank', 'width=900,height=700');
+  if (!win) { alert('Please allow pop-ups to print.'); return; }
+  const html = pages.map((p, i) => `
+    <div class="rpage" style="${i < pages.length-1 ? 'page-break-after:always;' : ''}">
+      <img src="${p.url}" class="rimg" />
+      <div class="rwm">${esc(p.label)}</div>
+    </div>`).join('');
+  win.document.write(`<!DOCTYPE html><html><head><meta charset="UTF-8">
+<title>Receipts — ${esc(s.employee_name)}</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:#fff;font-family:'Century Gothic',sans-serif}
+.rpage{position:relative;width:100vw;height:100vh;display:flex;align-items:center;justify-content:center;overflow:hidden;background:#fff}
+.rimg{max-width:100%;max-height:100%;object-fit:contain}
+.rwm{position:absolute;bottom:24px;right:28px;font-size:12pt;font-weight:700;color:rgba(0,0,0,0.32);text-align:right;max-width:60%}
+@media print{.rpage{width:100%;height:100vh}}
+</style></head><body>${html}
+<script>window.onload=function(){window.print();}<\/script>
+</body></html>`);
+  win.document.close();
+}
+
 /* ── Download Excel from drawer ─────────────────────── */
 async function downloadExcel() {
   if (!activeId) return;
