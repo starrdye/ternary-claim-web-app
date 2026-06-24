@@ -250,6 +250,36 @@ body {
 .claim-table tbody tr:nth-child(even) td { background: #f7f8fa; }
 .claim-table tbody tr:hover td { background: #eef3fb; }
 
+/* Inline currency input inside the Total column header */
+.currency-in {
+  background: transparent;
+  border: none;
+  border-bottom: 1px solid rgba(255,255,255,0.45);
+  color: #fff;
+  font-family: var(--font);
+  font-size: 9.5pt;
+  font-weight: 700;
+  width: 40px;
+  text-align: center;
+  text-transform: uppercase;
+  outline: none;
+  padding: 0 1px;
+  cursor: text;
+}
+.currency-in:focus {
+  border-bottom-color: var(--gold);
+  background: rgba(255,255,255,0.1);
+  border-radius: 2px;
+}
+@media print {
+  .currency-in {
+    border: none !important;
+    background: transparent !important;
+    color: #fff !important;
+    width: auto;
+  }
+}
+
 /* The last two columns (docs / delete) have no Excel border */
 .claim-table tbody td.td-docs,
 .claim-table tbody td.td-del {
