@@ -219,7 +219,7 @@ function renderDrawer(s) {
         </tr></thead>
         <tbody>${itemRows || '<tr><td colspan="4" style="color:#aaa;text-align:center;padding:10px">No items</td></tr>'}</tbody>
         <tfoot><tr class="total-r">
-          <td colspan="3" class="tlbl">Total Reimbursement (SGD)</td>
+          <td colspan="3" class="tlbl">Total Reimbursement (${s.currency || 'SGD'})</td>
           <td class="num">${total.toFixed(2)}</td>
         </tr></tfoot>
       </table>
