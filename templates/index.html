@@ -7,6 +7,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@300;400;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/static/css/styles.css" />
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css" />
 </head>
 <body>
 
@@ -68,8 +69,8 @@
             <span>TO</span>
           </div>
           <div class="period-inputs">
-            <input id="period_from" class="meta-date" type="date" />
-            <input id="period_to"   class="meta-date" type="date" />
+            <input id="period_from" class="meta-date" type="text" placeholder="dd/mm/yyyy" readonly />
+            <input id="period_to"   class="meta-date" type="text" placeholder="dd/mm/yyyy" readonly />
           </div>
         </div>
       </div>
@@ -175,6 +176,7 @@
   </div>
 </div>
 
+<script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
 <script src="/static/js/app.js"></script>
 </body>
 </html>
