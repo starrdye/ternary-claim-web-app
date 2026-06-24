@@ -287,3 +287,50 @@ function buildPayload() {
     attachments:   items.flatMap((i,idx) => i.files.map(f => ({ item_index:idx+1, description:i.description, ...f })))
   };
 }
+
+/* ── Print Form ─────────────────────────────────────── */
+function printForm() {
+  window.print();
+}
+
+/* ── Print Receipts ─────────────────────────────────── */
+const IMAGE_EXTS = new Set(['jpg','jpeg','png','gif','webp','heic']);
+
+function printReceipts() {
+  const pages = [];
+  items.forEach(item => {
+    item.files.forEach(f => {
+      const ext = (f.original_name || '').split('.').pop().toLowerCase();
+      if (!IMAGE_EXTS.has(ext)) return;
+      pages.push({
+        url:   f.url,
+        label: (item.description || '') + (item.total ? '  —  SGD ' + parseFloat(item.total).toFixed(2) : '')
+      });
+    });
+  });
+  if (!pages.length) { alert('No image receipts attached. Please attach JPG or PNG files to your items first.'); return; }
+  openReceiptWindow(pages, v('employee_name') || 'Claim');
+}
+
+function openReceiptWindow(pages, title) {
+  const win = window.open('', '_blank', 'width=900,height=700');
+  if (!win) { alert('Please allow pop-ups to print receipts.'); return; }
+  const html = pages.map((p, i) => `
+    <div class="rpage" style="${i < pages.length-1 ? 'page-break-after:always;' : ''}">
+      <img src="${p.url}" class="rimg" />
+      <div class="rwm">${esc(p.label)}</div>
+    </div>`).join('');
+  win.document.write(`<!DOCTYPE html><html><head><meta charset="UTF-8">
+<title>Receipts — ${esc(title)}</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:#fff;font-family:'Century Gothic',sans-serif}
+.rpage{position:relative;width:100vw;height:100vh;display:flex;align-items:center;justify-content:center;overflow:hidden;background:#fff}
+.rimg{max-width:100%;max-height:100%;object-fit:contain}
+.rwm{position:absolute;bottom:24px;right:28px;font-size:12pt;font-weight:700;color:rgba(0,0,0,0.32);text-align:right;max-width:60%}
+@media print{.rpage{width:100%;height:100vh}}
+</style></head><body>${html}
+<script>window.onload=function(){window.print();}<\/script>
+</body></html>`);
+  win.document.close();
+}
