@@ -593,6 +593,44 @@ body {
 .chip-rm:hover { color: #c0392b; }
 
 /* ═══════════════════════════════════════════════════
+   PRINT — claim form only
+═══════════════════════════════════════════════════ */
+@media print {
+  body { background: #fff; }
+  .topbar,
+  .preview-panel,
+  .add-row-wrap,
+  .td-docs,
+  .td-del,
+  .upload-modal,
+  .modal-back { display: none !important; }
+  .page-layout {
+    display: block;
+    height: auto;
+    overflow: visible;
+  }
+  .form-panel {
+    overflow: visible;
+    height: auto;
+    padding: 0;
+  }
+  .a4-sheet {
+    box-shadow: none;
+    padding: 20px 24px;
+    max-width: 100%;
+    width: 100%;
+  }
+  .claim-table th.th-docs,
+  .claim-table th:last-child { display: none; }
+  .cell-in, .meta-val, .meta-date, .note-input {
+    border: none !important;
+    outline: none !important;
+    background: transparent !important;
+  }
+  .meta-val { border-bottom: 1px solid #999 !important; }
+}
+
+/* ═══════════════════════════════════════════════════
    RESPONSIVE
 ═══════════════════════════════════════════════════ */
 @media (max-width: 860px) {
