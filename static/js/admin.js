@@ -291,7 +291,7 @@ th.c{text-align:center} th.r{text-align:right}
 .sig-block .line{border-bottom:1px solid #000;width:160px;height:28px;margin-bottom:4px}
 .sig-block .lbl{font-size:9pt}
 .footer{margin-top:32px;border-top:1px solid #ccc;padding-top:8px;font-size:8pt;color:#555}
-@media print{body{padding:0}}
+@page{margin:0}@media print{body{padding:0}}
 </style></head><body>
 <img src="/static/logo.jpg" class="logo" />
 <div class="meta">
@@ -369,7 +369,7 @@ body{background:#fff;font-family:'Century Gothic',sans-serif}
 .rpage{position:relative;width:100vw;height:100vh;display:flex;align-items:center;justify-content:center;overflow:hidden;background:#fff}
 .rimg{max-width:100%;max-height:100%;object-fit:contain}
 .rwm{position:absolute;bottom:24px;right:28px;font-size:12pt;font-weight:700;color:rgba(0,0,0,0.32);text-align:right;max-width:60%}
-@media print{.rpage{width:100%;height:100vh}}
+@page{margin:0}@media print{.rpage{width:100%;height:100vh}}
 </style></head><body>${html}
 <script>window.onload=function(){window.print();}<\/script>
 </body></html>`);
