@@ -617,7 +617,7 @@ function openReceiptWindow(pages, name) {
     
     @media print{
       body{background:#fff}
-      h1{position:static}
+      h1, #loading-banner{display:none !important}
       .rp{box-shadow:none;margin:0;max-width:100%;padding:8px 0;border-top:1px solid #ccc;page-break-after:always}
       .rp:first-child{border-top:none}
       .pdf-canvas-container canvas { border: none; box-shadow: none; page-break-after: always; }
@@ -626,6 +626,9 @@ function openReceiptWindow(pages, name) {
   </style>
 </head>
 <body>
+  <div id="loading-banner" style="background:#fffae6;padding:12px 18px;font-size:13px;font-weight:600;border-bottom:1px solid #ffe58f;color:#b78103;position:sticky;top:0;z-index:20;font-family:Arial,sans-serif;">
+    ⚡ Loading and rendering PDF receipts... Please wait.
+  </div>
   <h1>Receipts — ${name}</h1>
   ${pageHtml}
   <script>
@@ -633,6 +636,7 @@ function openReceiptWindow(pages, name) {
 
     var imgTotal = ${imgTotal}, imgLoadedCount = 0;
     var pdfsCount = 0, pdfsLoaded = 0;
+    var printed = false;
 
     function imgLoaded() {
       imgLoadedCount++;
@@ -640,10 +644,18 @@ function openReceiptWindow(pages, name) {
     }
 
     function checkReady() {
-      if (imgLoadedCount >= imgTotal && pdfsLoaded >= pdfsCount) {
+      if (imgLoadedCount >= imgTotal && pdfsLoaded >= pdfsCount && !printed) {
+        printed = true;
+        const banner = document.getElementById('loading-banner');
+        if (banner) {
+          banner.style.background = '#e6ffed';
+          banner.style.borderColor = '#b7eb8f';
+          banner.style.color = '#287933';
+          banner.textContent = '✅ All receipts loaded! Opening print dialog...';
+        }
         setTimeout(function() {
           window.print();
-        }, 800);
+        }, 1500);
       }
     }
 

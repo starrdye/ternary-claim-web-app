@@ -405,16 +405,21 @@ async function adminPrintReceipts() {
     @page{margin:0}
     @media print{
       .rpage, .pdf-page-wrapper{width:100%;height:100vh}
+      #loading-banner{display:none !important}
     }
   </style>
 </head>
 <body>
+  <div id="loading-banner" style="background:#fffae6;padding:12px 18px;font-size:13px;font-weight:600;border-bottom:1px solid #ffe58f;color:#b78103;position:sticky;top:0;z-index:20;font-family:Arial,sans-serif;">
+    ⚡ Loading and rendering PDF receipts... Please wait.
+  </div>
   ${pageHtml}
   <script>
     pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.4.120/pdf.worker.min.js';
 
     var imgTotal = ${imgTotal}, imgLoadedCount = 0;
     var pdfsCount = 0, pdfsLoaded = 0;
+    var printed = false;
 
     function imgLoaded() {
       imgLoadedCount++;
@@ -422,14 +427,22 @@ async function adminPrintReceipts() {
     }
 
     function checkReady() {
-      if (imgLoadedCount >= imgTotal && pdfsLoaded >= pdfsCount) {
+      if (imgLoadedCount >= imgTotal && pdfsLoaded >= pdfsCount && !printed) {
+        printed = true;
+        const banner = document.getElementById('loading-banner');
+        if (banner) {
+          banner.style.background = '#e6ffed';
+          banner.style.borderColor = '#b7eb8f';
+          banner.style.color = '#287933';
+          banner.textContent = '✅ All receipts loaded! Opening print dialog...';
+        }
         const pages = document.querySelectorAll('.rpage, .pdf-page-wrapper');
         if (pages.length > 0) {
           pages[pages.length - 1].style.pageBreakAfter = 'avoid';
         }
         setTimeout(function() {
           window.print();
-        }, 800);
+        }, 1500);
       }
     }
 
