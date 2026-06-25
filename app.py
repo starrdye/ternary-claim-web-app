@@ -331,19 +331,73 @@ def upload_file():
     if not file.filename:
         return jsonify({'error': 'No filename'}), 400
 
-    ext = os.path.splitext(file.filename)[1].lower()
-    allowed = {'.jpg', '.jpeg', '.png', '.gif', '.pdf', '.webp', '.heic', '.msg', '.docx'}
-    if ext not in allowed:
-        return jsonify({'error': f'File type {ext} not allowed'}), 400
+    original_ext = os.path.splitext(file.filename)[1].lower()
+    allowed = {'.jpg', '.jpeg', '.png', '.gif', '.pdf', '.webp', '.heic', '.msg', '.docx', '.doc'}
+    if original_ext not in allowed:
+        return jsonify({'error': f'File type {original_ext} not allowed'}), 400
 
-    unique_name = f"{uuid.uuid4().hex}{ext}"
-    save_path = os.path.join(app.config['UPLOAD_FOLDER'], unique_name)
+    temp_unique_name = f"{uuid.uuid4().hex}{original_ext}"
+    save_path = os.path.join(app.config['UPLOAD_FOLDER'], temp_unique_name)
     file.save(save_path)
 
+    # Convert Word / MSG attachments to PDF immediately on upload
+    if original_ext in ('.docx', '.doc', '.msg'):
+        pdf_unique_name = f"{uuid.uuid4().hex}.pdf"
+        pdf_save_path = os.path.join(app.config['UPLOAD_FOLDER'], pdf_unique_name)
+        
+        conversion_success = False
+        error_msg = ""
+        
+        # 1. Try LibreOffice
+        libreoffice_bin = _find_libreoffice()
+        if libreoffice_bin:
+            try:
+                import tempfile, subprocess
+                with tempfile.TemporaryDirectory() as tmpdir:
+                    result = subprocess.run(
+                        [libreoffice_bin, '--headless', '--convert-to', 'pdf',
+                         '--outdir', tmpdir, save_path],
+                        capture_output=True, timeout=60
+                    )
+                    pdfs = [f for f in os.listdir(tmpdir) if f.lower().endswith('.pdf')]
+                    if result.returncode == 0 and pdfs:
+                        import shutil
+                        shutil.copy(os.path.join(tmpdir, pdfs[0]), pdf_save_path)
+                        conversion_success = True
+            except Exception as e:
+                error_msg = str(e)
+                app.logger.warning('LibreOffice upload conversion failed: %s', e)
+
+        # 2. Try Windows COM Fallback
+        if not conversion_success and os.name == 'nt':
+            try:
+                if _convert_to_pdf_win32(save_path, pdf_save_path):
+                    conversion_success = True
+            except Exception as e:
+                error_msg = str(e)
+                app.logger.error('COM upload conversion failed: %s', e)
+
+        # Clean up the original uploaded Word/MSG file
+        try:
+            os.remove(save_path)
+        except Exception:
+            pass
+
+        if not conversion_success:
+            return jsonify({
+                'error': f'Failed to convert uploaded document to PDF: {error_msg or "No conversion tools available"}'
+            }), 500
+
+        return jsonify({
+            'filename': pdf_unique_name,
+            'original_name': file.filename,
+            'url': f'/uploads/{pdf_unique_name}'
+        })
+
     return jsonify({
-        'filename': unique_name,
+        'filename': temp_unique_name,
         'original_name': file.filename,
-        'url': f'/uploads/{unique_name}'
+        'url': f'/uploads/{temp_unique_name}'
     })
 
 

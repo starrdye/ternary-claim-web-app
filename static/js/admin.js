@@ -346,7 +346,8 @@ async function adminPrintReceipts() {
   const pages = [];
 
   (s.attachments || []).forEach(att => {
-    const ext = (att.original_name || '').split('.').pop().toLowerCase();
+    const urlExt  = (att.url || '').split('.').pop().toLowerCase();
+    const origExt = (att.original_name || '').split('.').pop().toLowerCase();
     const itemIdx = (att.item_index || 1) - 1;
     const item    = (s.items || [])[itemIdx] || {};
     const desc    = att.description || item.description || '';
@@ -355,12 +356,12 @@ async function adminPrintReceipts() {
     const label   = (att.original_name || '') + (desc || amount ? '  —  ' + desc + amount : '');
     const base    = window.location.origin;
 
-    if (IMAGE_EXTS.has(ext)) {
+    if (IMAGE_EXTS.has(urlExt) || IMAGE_EXTS.has(origExt)) {
       pages.push({ type: 'image', url: base + att.url, label });
-    } else if (PDF_EXTS.has(ext)) {
+    } else if (urlExt === 'pdf' || PDF_EXTS.has(origExt)) {
       const fname = att.url.split('/').pop();
       pages.push({ type: 'pdf', url: base + '/api/to-pdf/' + fname, label });
-    } else if (DOC_EXTS.has(ext)) {
+    } else if (DOC_EXTS.has(origExt)) {
       const fname = att.url.split('/').pop();
       pages.push({ type: 'pdf', url: base + '/api/to-pdf/' + fname, label });
     }

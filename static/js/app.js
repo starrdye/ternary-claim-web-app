@@ -564,17 +564,16 @@ function printReceipts() {
   const pages = [];
   items.forEach(item => {
     item.files.forEach(f => {
-      const ext   = (f.original_name || '').split('.').pop().toLowerCase();
+      const urlExt  = (f.url || '').split('.').pop().toLowerCase();
+      const origExt = (f.original_name || '').split('.').pop().toLowerCase();
       const label = (item.description || '') + (item.total ? '  —  ' + (v('currency')||'SGD') + ' ' + parseFloat(item.total).toFixed(2) : '');
       const base  = window.location.origin;
-      if (IMAGE_EXTS.has(ext)) {
+      if (IMAGE_EXTS.has(urlExt) || IMAGE_EXTS.has(origExt)) {
         pages.push({ type: 'image', url: base + f.url, label, name: f.original_name });
-      } else if (PDF_EXTS.has(ext)) {
-        // Serve PDF via /api/to-pdf so it comes through with correct headers
+      } else if (urlExt === 'pdf' || PDF_EXTS.has(origExt)) {
         const fname = f.url.split('/').pop();
         pages.push({ type: 'pdf', url: base + '/api/to-pdf/' + fname, label, name: f.original_name });
-      } else if (DOC_EXTS.has(ext)) {
-        // Convert DOCX/DOC/MSG to PDF server-side via LibreOffice
+      } else if (DOC_EXTS.has(origExt)) {
         const fname = f.url.split('/').pop();
         pages.push({ type: 'pdf', url: base + '/api/to-pdf/' + fname, label, name: f.original_name });
       }
