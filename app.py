@@ -210,10 +210,70 @@ def _find_libreoffice():
     return None
 
 
+def _convert_to_pdf_win32(src_path, dest_pdf_path):
+    """Convert DOCX/DOC/MSG to PDF using Office COM automation on Windows."""
+    import win32com.client
+    import pythoncom
+
+    pythoncom.CoInitialize()
+    ext = os.path.splitext(src_path)[1].lower()
+
+    if ext in ('.docx', '.doc'):
+        word = None
+        try:
+            word = win32com.client.DispatchEx("Word.Application")
+            word.Visible = False
+            word.DisplayAlerts = 0
+            doc = word.Documents.Open(os.path.abspath(src_path), ReadOnly=True)
+            doc.SaveAs(os.path.abspath(dest_pdf_path), FileFormat=17) # 17 is wdFormatPDF
+            doc.Close()
+            return True
+        finally:
+            if word:
+                word.Quit()
+    elif ext == '.msg':
+        outlook = None
+        word = None
+        try:
+            outlook = win32com.client.DispatchEx("Outlook.Application")
+            msg = outlook.CreateItemFromTemplate(os.path.abspath(src_path))
+            
+            temp_dir = os.path.dirname(dest_pdf_path)
+            temp_html_path = os.path.join(temp_dir, "temp_msg.html")
+            msg.SaveAs(os.path.abspath(temp_html_path), 5) # 5 is olHTML
+            
+            word = win32com.client.DispatchEx("Word.Application")
+            word.Visible = False
+            word.DisplayAlerts = 0
+            doc = word.Documents.Open(os.path.abspath(temp_html_path), ReadOnly=True)
+            doc.SaveAs(os.path.abspath(dest_pdf_path), FileFormat=17)
+            doc.Close()
+            
+            try:
+                os.remove(temp_html_path)
+            except Exception:
+                pass
+            return True
+        finally:
+            if word:
+                word.Quit()
+    return False
+
+
+def _make_pdf_response(pdf_bytes, filename):
+    from flask import make_response as _mr
+    resp = _mr(pdf_bytes)
+    resp.headers['Content-Type'] = 'application/pdf'
+    resp.headers['Content-Disposition'] = (
+        'inline; filename="' + os.path.splitext(filename)[0] + '.pdf"'
+    )
+    return resp
+
+
 @app.route('/api/to-pdf/<path:filename>')
 @login_required
 def convert_to_pdf(filename):
-    """Convert a DOCX/DOC/MSG file in the uploads folder to PDF via LibreOffice."""
+    """Convert a DOCX/DOC/MSG file in the uploads folder to PDF."""
     import subprocess, tempfile, shutil as _shutil
     src_path = os.path.join(app.config['UPLOAD_FOLDER'], filename)
     if not os.path.exists(src_path):
@@ -225,40 +285,41 @@ def convert_to_pdf(filename):
         return send_from_directory(app.config['UPLOAD_FOLDER'], filename,
                                    mimetype='application/pdf')
 
+    # Try using LibreOffice first
     libreoffice_bin = _find_libreoffice()
-    if not libreoffice_bin:
-        return jsonify({
-            'error': 'LibreOffice not found. To support converting Word (.docx/.doc) and .msg files to PDF, please install LibreOffice.'
-        }), 500
+    if libreoffice_bin:
+        try:
+            with tempfile.TemporaryDirectory() as tmpdir:
+                result = subprocess.run(
+                    [libreoffice_bin, '--headless', '--convert-to', 'pdf',
+                     '--outdir', tmpdir, src_path],
+                    capture_output=True, timeout=60
+                )
+                pdfs = [f for f in os.listdir(tmpdir) if f.lower().endswith('.pdf')]
+                if result.returncode == 0 and pdfs:
+                    pdf_path = os.path.join(tmpdir, pdfs[0])
+                    with open(pdf_path, 'rb') as f:
+                        pdf_bytes = f.read()
+                    return _make_pdf_response(pdf_bytes, filename)
+        except Exception as e:
+            app.logger.warning('LibreOffice conversion failed, trying COM: %s', e)
 
-    try:
-        with tempfile.TemporaryDirectory() as tmpdir:
-            result = subprocess.run(
-                [libreoffice_bin, '--headless', '--convert-to', 'pdf',
-                 '--outdir', tmpdir, src_path],
-                capture_output=True, timeout=60
-            )
-            pdfs = [f for f in os.listdir(tmpdir) if f.lower().endswith('.pdf')]
-            if result.returncode != 0 or not pdfs:
-                app.logger.error('LibreOffice error: %s', result.stderr.decode())
-                return jsonify({'error': 'Conversion failed'}), 500
+    # Fallback to Windows COM automation (if on Windows and Office is installed)
+    if os.name == 'nt':
+        try:
+            with tempfile.TemporaryDirectory() as tmpdir:
+                dest_pdf_path = os.path.join(tmpdir, 'converted.pdf')
+                if _convert_to_pdf_win32(src_path, dest_pdf_path):
+                    with open(dest_pdf_path, 'rb') as f:
+                        pdf_bytes = f.read()
+                    return _make_pdf_response(pdf_bytes, filename)
+        except Exception as e:
+            app.logger.error('Windows COM conversion failed: %s', e)
+            return jsonify({'error': f'Office COM conversion failed: {str(e)}'}), 500
 
-            pdf_path = os.path.join(tmpdir, pdfs[0])
-            with open(pdf_path, 'rb') as f:
-                pdf_bytes = f.read()
-
-        from flask import make_response as _mr
-        resp = _mr(pdf_bytes)
-        resp.headers['Content-Type'] = 'application/pdf'
-        resp.headers['Content-Disposition'] = (
-            'inline; filename="' + os.path.splitext(filename)[0] + '.pdf"'
-        )
-        return resp
-    except subprocess.TimeoutExpired:
-        return jsonify({'error': 'Conversion timed out'}), 500
-    except Exception as e:
-        app.logger.error('to-pdf error: %s', e)
-        return jsonify({'error': str(e)}), 500
+    return jsonify({
+        'error': 'No conversion tool available. Please install LibreOffice to support document conversion.'
+    }), 500
 
 
 @app.route('/api/upload', methods=['POST'])
