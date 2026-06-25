@@ -188,6 +188,26 @@ async function deleteDraft(did, e) {
   showHistory(); // refresh drawer
 }
 
+
+/* Delete a submitted claim (only if Pending) */
+async function deleteSubmission(sid, e) {
+  if (e) { e.stopPropagation(); e.preventDefault(); }
+  if (!confirm('Delete this submitted claim? This action cannot be undone.')) return;
+  try {
+    const res = await fetch(`/api/submissions/${sid}`, { method: 'DELETE' });
+    if (!res.ok) {
+      const data = await res.json();
+      alert(data.error || 'Failed to delete claim');
+      return;
+    }
+  } catch (err) {
+    alert('Failed to delete claim: ' + err.message);
+    return;
+  }
+  showHistory(); // refresh drawer
+}
+
+
 /* Open a draft from history — replaces current form */
 async function openDraftFromHistory(did) {
   closeHistory();
@@ -837,6 +857,15 @@ function histCard(s) {
 
   const noteHtml = s.notes ? `<div class="hci-note"><strong>Note:</strong> ${esc(s.notes)}</div>` : '';
 
+  const actionsHtml = (s.status === 'Pending' || !s.status)
+    ? `<div class="hc-actions" onclick="event.stopPropagation()">
+        <button class="hc-btn hc-trash" onclick="deleteSubmission('${s.id}', event)" title="Delete claim">
+          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4h6v2"/></svg>
+          Delete
+        </button>
+      </div>`
+    : '';
+
   return `<div class="hc">
     <div class="hc-top" onclick="toggleHistItem(this)">
       <div class="hc-left">
@@ -850,6 +879,7 @@ function histCard(s) {
       </div>
       <div class="hc-right">
         <div class="hc-amount">${esc(s.currency||'SGD')} ${amtStr}</div>
+        ${actionsHtml}
       </div>
       <div class="hc-chev">›</div>
     </div>

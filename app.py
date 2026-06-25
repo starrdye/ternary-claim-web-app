@@ -491,6 +491,26 @@ def update_submission(sid):
     return jsonify({'id': sid})
 
 
+@app.route('/api/submissions/<sid>', methods=['DELETE'])
+@login_required
+def delete_submission(sid):
+    subs = _load_submissions()
+    rec = next((s for s in subs if s['id'] == sid), None)
+    if not rec:
+        return jsonify({'error': 'Not found'}), 404
+
+    is_admin = session.get('role') == 'admin'
+    if not is_admin and rec.get('submitted_by') != session['username']:
+        return jsonify({'error': 'Forbidden'}), 403
+
+    if rec.get('status') != 'Pending':
+        return jsonify({'error': 'Only pending claims can be deleted'}), 400
+
+    updated_subs = [s for s in subs if s['id'] != sid]
+    _save_submissions(updated_subs)
+    return jsonify({'ok': True})
+
+
 @app.route('/api/users', methods=['GET'])
 @admin_required
 def list_users():
