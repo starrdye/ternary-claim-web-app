@@ -1,67 +1,67 @@
 [
   {
     "username": "admin",
-    "password": "240be518fabd2724ddb6f04eeb1da5967448d7e831c08c8fa822809f74c720a9",
+    "password": "6051fc84a7a0d74c225fb18a496b09952da5642e60723ecae543298edd7d82d6",
     "role": "admin",
     "display_name": "Admin"
   },
   {
     "username": "xingye",
-    "password": "bd94dcda26fccb4e68d6a31f9b5aac0b571ae266d822620e901ef7ebe3a11d4f",
+    "password": "8ae8811415d36d9413c0f46d18c83fb3ad973ab795d95d7c20c28af136ba28d1",
     "role": "employee",
     "display_name": "Xingye, Zhou"
   },
   {
     "username": "peter",
-    "password": "bd94dcda26fccb4e68d6a31f9b5aac0b571ae266d822620e901ef7ebe3a11d4f",
+    "password": "f10c139e846165d7e2bf753d72bc8342cf0f574de87c6eedb03986dbcf45d5e6",
     "role": "employee",
     "display_name": "Peter Tan"
   },
   {
     "username": "jason",
-    "password": "bd94dcda26fccb4e68d6a31f9b5aac0b571ae266d822620e901ef7ebe3a11d4f",
+    "password": "baf95ccba46c92b34eef67a447ee608626f0a29a07aa9a558544bc06b0fbe255",
     "role": "employee",
     "display_name": "Jason Chan"
   },
   {
     "username": "mary",
-    "password": "bd94dcda26fccb4e68d6a31f9b5aac0b571ae266d822620e901ef7ebe3a11d4f",
+    "password": "74cfd09e995141efe80ef3f172abb849c1ac7d05eed7c3a816ec0a8b020decb5",
     "role": "employee",
     "display_name": "Mary"
   },
   {
     "username": "chuiwhei",
-    "password": "bd94dcda26fccb4e68d6a31f9b5aac0b571ae266d822620e901ef7ebe3a11d4f",
+    "password": "07398614cf56f21302e90bbc9b0f859b9c4d18b694683076ed6d3bb39b97619e",
     "role": "employee",
     "display_name": "Chui Whei"
   },
   {
     "username": "egan",
-    "password": "bd94dcda26fccb4e68d6a31f9b5aac0b571ae266d822620e901ef7ebe3a11d4f",
+    "password": "8ad3785bc8843eb41cff9b23ecc4f71cbb584e67930ae84728c042ac2974ff35",
     "role": "employee",
     "display_name": "Egan"
   },
   {
     "username": "edward",
-    "password": "bd94dcda26fccb4e68d6a31f9b5aac0b571ae266d822620e901ef7ebe3a11d4f",
+    "password": "012058b64570513f21bd7840dd914c50cc6d772b2761c8ee6098b864f2f686b5",
     "role": "employee",
     "display_name": "Edward"
   },
   {
     "username": "thomas",
-    "password": "bd94dcda26fccb4e68d6a31f9b5aac0b571ae266d822620e901ef7ebe3a11d4f",
+    "password": "161e1a2eac3b90c9270b22fd5d4d39c1c2de866d52103207e8b9995c1496e675",
     "role": "employee",
     "display_name": "Thomas"
   },
   {
     "username": "yongchuan",
-    "password": "bd94dcda26fccb4e68d6a31f9b5aac0b571ae266d822620e901ef7ebe3a11d4f",
+    "password": "9bf3c756f4d5e32928939362bcd96ee62e3e1002a62d9ed8d36cb784e584ac59",
     "role": "employee",
     "display_name": "Yong Chuan"
   },
   {
     "username": "gabriel",
-    "password": "bd94dcda26fccb4e68d6a31f9b5aac0b571ae266d822620e901ef7ebe3a11d4f",
+    "password": "303ef03c7d48380e69e60df18b0f8e1645416eddec1cc7071d330032ed2562fe",
     "role": "employee",
     "display_name": "Gabriel"
   }
