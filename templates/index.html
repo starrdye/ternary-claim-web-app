@@ -15,10 +15,11 @@
 <header class="topbar">
   <div class="topbar-left">
     <a href="/admin" class="tb-admin-link" id="admin-link" style="display:none">Admin View</a>
-    <button class="tb-btn tb-outline" onclick="showHistory()" style="font-size:11px;padding:4px 10px">
-      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+    <button class="tb-btn tb-outline" onclick="showHistory()">
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
       History
     </button>
+    <span id="draft-status" class="draft-status"></span>
   </div>
   <div class="topbar-right">
     <span class="tb-user" id="tb-user"></span>
@@ -34,6 +35,10 @@
       <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
       Download Excel
     </button>
+    <button class="tb-btn tb-outline" id="save-draft-btn" onclick="manualSaveDraft()" title="Save as draft">
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
+      Save Draft
+    </button>
     <button class="tb-btn tb-gold" onclick="submitClaim()">
       <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
       Submit Claim
@@ -48,12 +53,12 @@
   <div class="form-panel">
     <div class="a4-sheet" id="claim-sheet">
 
-      <!-- ① Logo row — mirrors Excel rows 1-2 -->
+      <!-- ① Logo row -->
       <div class="sheet-logo-row">
         <img src="/static/logo.jpg" alt="Ternary" class="sheet-logo" />
       </div>
 
-      <!-- ② Meta row — mirrors Excel rows 7-9 -->
+      <!-- ② Meta row -->
       <div class="sheet-meta">
         <div class="meta-left">
           <div class="meta-field-row">
@@ -63,7 +68,7 @@
           </div>
           <div class="meta-field-row">
             <span class="meta-key">Claim Form no.:</span>
-            <input id="claim_no" class="meta-val meta-short" type="text" placeholder="e.g. 26414" />
+            <input id="claim_no" class="meta-val meta-short" type="text" placeholder="Auto" title="Auto-assigned on submission" />
           </div>
         </div>
         <div class="meta-right">
@@ -79,7 +84,7 @@
         </div>
       </div>
 
-      <!-- ③ Table — mirrors Excel rows 11+ -->
+      <!-- ③ Table -->
       <table class="claim-table">
         <thead>
           <tr>
@@ -105,7 +110,7 @@
         <button class="add-row-btn" onclick="addItem()">+ Add Row</button>
       </div>
 
-      <!-- ④ Signature section — mirrors Excel rows 37-38 -->
+      <!-- ④ Signature section -->
       <div class="sig-section">
         <div class="sig-block">
           <div class="sig-line"></div>
@@ -125,13 +130,13 @@
         </div>
       </div>
 
-      <!-- ⑤ Note — mirrors Excel row 41 -->
+      <!-- ⑤ Note -->
       <div class="note-section">
         <span class="note-key">Note:</span>
         <textarea id="notes" class="note-input" rows="2" placeholder="Additional notes…"></textarea>
       </div>
 
-      <!-- ⑥ Footer — mirrors Excel rows 53-57 -->
+      <!-- ⑥ Footer -->
       <div class="sheet-footer">
         <div class="footer-co">Ternary Fund Management Pte Ltd</div>
         <div class="footer-sub">UEN: 201902851Z</div>

@@ -3,34 +3,59 @@ let items = [];
 let nextId = 1;
 let activeModalId = null;
 let currentUser = null;
-let editId = null;  // set when editing an existing submission
-let histSubs = {};  // id → submission, populated when history drawer opens
+let editId = null;         // set when admin is editing an existing submission
+let histSubs = {};         // id → submission, populated when history drawer opens
+let histDrafts = [];       // drafts array, populated when history drawer opens
+
+/* ── Draft state ────────────────────────────────────── */
+let currentDraftId = null;
+let draftSaveTimer = null;
+let draftFadeTimer = null;
 
 /* ── Boot ───────────────────────────────────────────── */
 const FP_OPTS = {
-  dateFormat: 'Y-m-d',   // internal value always yyyy-mm-dd (API format)
+  dateFormat: 'Y-m-d',
   altInput:   true,
-  altFormat:  'd/m/Y',   // visible display dd/mm/yyyy
+  altFormat:  'd/m/Y',
   allowInput: false,
   disableMobile: true,
 };
 
 document.addEventListener('DOMContentLoaded', async () => {
-  // Period date pickers
-  flatpickr('#period_from', { ...FP_OPTS, altInputClass: 'meta-date', onChange: () => renderPreview() });
-  flatpickr('#period_to',   { ...FP_OPTS, altInputClass: 'meta-date', onChange: () => renderPreview() });
+  flatpickr('#period_from', { ...FP_OPTS, altInputClass: 'meta-date', onChange: () => { renderPreview(); scheduleDraftSave(); } });
+  flatpickr('#period_to',   { ...FP_OPTS, altInputClass: 'meta-date', onChange: () => { renderPreview(); scheduleDraftSave(); } });
 
   await loadUser();
+
   const sid = new URLSearchParams(location.search).get('edit');
   if (sid) {
     await loadEditMode(sid);
   } else {
-    addItem();
-    addItem();
+    // Auto-restore latest draft on login
+    const latestDraft = await fetchLatestDraft();
+    if (latestDraft) {
+      currentDraftId = latestDraft.id;
+      fillFormData(latestDraft);
+      // If draft has no claim_no yet, pre-fill it
+      if (!latestDraft.claim_no) await prefillClaimNo();
+    } else {
+      addItem();
+      addItem();
+      await prefillClaimNo();
+    }
   }
-  ['employee_name','claim_no','notes','currency'].forEach(id => {
-    document.getElementById(id)?.addEventListener('input', renderPreview);
+
+  ['employee_name', 'claim_no', 'notes', 'currency'].forEach(id => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.addEventListener('input', () => { renderPreview(); scheduleDraftSave(); });
   });
+
+  // Save draft on page unload (best-effort)
+  window.addEventListener('beforeunload', () => {
+    if (!editId && currentDraftId) flushDraftSave();
+  });
+
   setupModalDragDrop();
 });
 
@@ -59,24 +84,138 @@ async function loadEmployeeAutocomplete() {
   } catch { /* ignore */ }
 }
 
-/* ── Edit mode ──────────────────────────────────────── */
-async function loadEditMode(sid) {
-  const res = await fetch(`/api/submissions/${sid}`);
-  if (!res.ok) { alert('Could not load submission for editing.'); return; }
-  const s = await res.json();
-  editId = sid;
+async function prefillClaimNo() {
+  try {
+    const el = document.getElementById('claim_no');
+    if (!el || el.value) return; // don't overwrite if already set (e.g. draft restore)
+    const res = await fetch('/api/next-claim-no');
+    if (!res.ok) return;
+    const { next } = await res.json();
+    el.value = next;
+    el.title = 'Auto-assigned — will be confirmed on submission';
+    renderPreview();
+  } catch { /* ignore */ }
+}
 
-  // Fill meta fields
-  document.getElementById('employee_name').value = s.employee_name || '';
-  document.getElementById('claim_no').value       = s.claim_no      || '';
-  document.getElementById('currency').value       = s.currency      || 'SGD';
-  document.getElementById('period_from')._flatpickr?.setDate(s.period_from || '', false);
-  document.getElementById('period_to')._flatpickr?.setDate(s.period_to   || '', false);
-  document.getElementById('notes').value          = s.notes         || '';
+/* ── Draft helpers ──────────────────────────────────── */
+function genDraftId() {
+  return 'draft_' + Array.from(crypto.getRandomValues(new Uint8Array(5)))
+    .map(b => b.toString(16).padStart(2, '0')).join('');
+}
 
-  // Add items with pre-filled values
-  const savedItems = (s.items || []);
-  if (!savedItems.length) { addItem(); addItem(); }
+function isDraftEmpty() {
+  return !v('employee_name') && !v('claim_no') && !v('period_from') && !v('period_to') && !v('notes')
+    && items.every(i => !i.date && !i.description && !i.gst && !i.total && !i.files.length);
+}
+
+async function fetchLatestDraft() {
+  try {
+    const res = await fetch('/api/drafts');
+    if (!res.ok) return null;
+    const drafts = await res.json();
+    return drafts.length ? drafts[0] : null; // sorted newest-first by server
+  } catch { return null; }
+}
+
+/* Schedule auto-save 800ms after last change — does not block typing */
+function scheduleDraftSave() {
+  if (editId) return;
+  clearTimeout(draftSaveTimer);
+  draftSaveTimer = setTimeout(saveDraft, 800);
+}
+
+/* Immediate save (used on blur and beforeunload) */
+function flushDraftSave() {
+  clearTimeout(draftSaveTimer);
+  if (!editId && !isDraftEmpty()) {
+    if (!currentDraftId) currentDraftId = genDraftId();
+    navigator.sendBeacon
+      ? navigator.sendBeacon(`/api/drafts/${currentDraftId}`, new Blob([JSON.stringify(buildPayload())], { type: 'application/json' }))
+      : fetch(`/api/drafts/${currentDraftId}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(buildPayload()), keepalive: true });
+  }
+}
+
+async function saveDraft() {
+  if (editId) return;
+  if (isDraftEmpty()) return;
+  if (!currentDraftId) currentDraftId = genDraftId();
+  setDraftStatus('saving');
+  try {
+    const res = await fetch(`/api/drafts/${currentDraftId}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(buildPayload()),
+    });
+    if (res.ok) setDraftStatus('saved');
+    else setDraftStatus('');
+  } catch { setDraftStatus(''); }
+}
+
+async function manualSaveDraft() {
+  if (editId) return;
+  clearTimeout(draftSaveTimer);
+  await saveDraft();
+}
+
+function setDraftStatus(status) {
+  const el = document.getElementById('draft-status');
+  if (!el) return;
+  clearTimeout(draftFadeTimer);
+  if (status === 'saving') {
+    el.textContent = 'Saving…';
+    el.className = 'draft-status saving';
+  } else if (status === 'saved') {
+    el.textContent = 'Draft saved';
+    el.className = 'draft-status saved';
+    draftFadeTimer = setTimeout(() => { el.textContent = ''; el.className = 'draft-status'; }, 3000);
+  } else {
+    el.textContent = '';
+    el.className = 'draft-status';
+  }
+}
+
+/* Delete a draft (called from history card) */
+async function deleteDraft(did, e) {
+  if (e) { e.stopPropagation(); e.preventDefault(); }
+  if (!confirm('Delete this draft?')) return;
+  try {
+    await fetch(`/api/drafts/${did}`, { method: 'DELETE' });
+  } catch { /* best effort */ }
+  if (currentDraftId === did) {
+    currentDraftId = null;
+    setDraftStatus('');
+  }
+  showHistory(); // refresh drawer
+}
+
+/* Open a draft from history — replaces current form */
+async function openDraftFromHistory(did) {
+  closeHistory();
+  try {
+    const res = await fetch(`/api/drafts/${did}`);
+    if (!res.ok) return;
+    const d = await res.json();
+    // Clear form first
+    items = [];
+    nextId = 1;
+    document.getElementById('items-tbody').innerHTML = '';
+    currentDraftId = did;
+    fillFormData(d);
+    setDraftStatus('saved');
+  } catch { alert('Could not load draft.'); }
+}
+
+/* ── Shared form-fill (used by both draft restore and admin edit) ── */
+function fillFormData(data) {
+  document.getElementById('employee_name').value = data.employee_name || '';
+  document.getElementById('claim_no').value       = data.claim_no      || '';
+  document.getElementById('currency').value       = data.currency      || 'SGD';
+  document.getElementById('period_from')._flatpickr?.setDate(data.period_from || '', false);
+  document.getElementById('period_to')._flatpickr?.setDate(data.period_to   || '', false);
+  document.getElementById('notes').value          = data.notes         || '';
+
+  const savedItems = data.items || [];
+  if (!savedItems.length) { addItem(); addItem(); return; }
   savedItems.forEach((item, idx) => {
     addItem();
     const it = items[items.length - 1];
@@ -89,8 +228,7 @@ async function loadEditMode(sid) {
       tr.querySelectorAll('input[type="number"]')[0].value = item.gst         || '';
       tr.querySelectorAll('input[type="number"]')[1].value = item.total       || '';
     }
-    // Restore attachments for this item
-    (s.attachments || []).filter(a => a.item_index === idx + 1).forEach(att => {
+    (data.attachments || []).filter(a => a.item_index === idx + 1).forEach(att => {
       it.files.push({ filename: att.filename, original_name: att.original_name, url: att.url });
     });
     updateBadge(it.id);
@@ -98,13 +236,27 @@ async function loadEditMode(sid) {
 
   recalcTotal();
   renderPreview();
+}
 
-  // Update UI to show edit context
+/* ── Edit mode (admin editing a submitted claim) ────── */
+async function loadEditMode(sid) {
+  const res = await fetch(`/api/submissions/${sid}`);
+  if (!res.ok) { alert('Could not load submission for editing.'); return; }
+  const s = await res.json();
+  editId = sid;
+
+  fillFormData(s);
+
+  // Hide draft controls in edit mode
+  const saveDraftBtn = document.getElementById('save-draft-btn');
+  if (saveDraftBtn) saveDraftBtn.style.display = 'none';
+  const draftEl = document.getElementById('draft-status');
+  if (draftEl) draftEl.style.display = 'none';
+
   const goldBtn = document.querySelector('.tb-btn.tb-gold');
   if (goldBtn) { goldBtn.innerHTML = goldBtn.innerHTML.replace('Submit Claim', 'Save Changes'); }
   document.title = `Edit — ${s.employee_name}`;
 
-  // Show edit banner below topbar
   const banner = document.createElement('div');
   banner.style.cssText = 'background:#fff3cd;color:#856404;font-size:12px;font-weight:600;padding:6px 18px;text-align:center;border-bottom:1px solid #ffc107';
   banner.innerHTML = `Editing submission <strong>${sid}</strong> — <a href="/admin" style="color:#856404">Back to Admin</a>`;
@@ -125,24 +277,32 @@ function addItem() {
     <td><input class="cell-in" type="number" min="0" step="0.01" placeholder="0.00" /></td>
     <td class="td-docs">
       <button class="docs-btn" onclick="openModal(${id})" title="Attach files">
-        📎<span class="doc-badge"></span>
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>
+        <span class="doc-badge"></span>
       </button>
     </td>
     <td class="td-del"><button class="del-btn" onclick="removeItem(this)" title="Remove row">×</button></td>`;
 
   document.getElementById('items-tbody').appendChild(tr);
 
-  // Flatpickr date picker — altInput shows dd/mm/yyyy, hidden input stores yyyy-mm-dd
   const fp = flatpickr(tr.querySelector('.date-in'), {
     ...FP_OPTS,
     altInputClass: 'cell-in',
-    onChange: (_, str) => { getItem(id).date = str; renderPreview(); }
+    onChange: (_, str) => { getItem(id).date = str; renderPreview(); scheduleDraftSave(); }
   });
   getItem(id)._fp = fp;
 
-  tr.querySelector('.desc-in')                          .addEventListener('input', e => { getItem(id).description = e.target.value; renderPreview(); });
-  tr.querySelectorAll('input[type="number"]')[0]        .addEventListener('input', e => { getItem(id).gst         = e.target.value; renderPreview(); });
-  tr.querySelectorAll('input[type="number"]')[1]        .addEventListener('input', e => { getItem(id).total       = e.target.value; recalcTotal(); renderPreview(); });
+  const descIn   = tr.querySelector('.desc-in');
+  const [gstIn, totalIn] = tr.querySelectorAll('input[type="number"]');
+
+  descIn.addEventListener('input',  e => { getItem(id).description = e.target.value; renderPreview(); scheduleDraftSave(); });
+  gstIn.addEventListener('input',   e => { getItem(id).gst         = e.target.value; renderPreview(); scheduleDraftSave(); });
+  totalIn.addEventListener('input', e => { getItem(id).total       = e.target.value; recalcTotal(); renderPreview(); scheduleDraftSave(); });
+
+  // Save immediately when leaving a cell (blur = user finished editing that cell)
+  [descIn, gstIn, totalIn].forEach(el => {
+    el.addEventListener('blur', () => { clearTimeout(draftSaveTimer); saveDraft(); });
+  });
 
   renderPreview();
 }
@@ -153,6 +313,7 @@ function removeItem(btn) {
   tr.remove();
   recalcTotal();
   renderPreview();
+  scheduleDraftSave();
 }
 
 function getItem(id) { return items.find(i => i.id === id); }
@@ -217,6 +378,7 @@ async function uploadFiles(fileList, itemId) {
       chip.classList.remove('uploading');
       updateBadge(itemId);
       renderPreview();
+      scheduleDraftSave();
     } catch {
       chip.querySelector('.chip-name').textContent = `Failed: ${file.name}`;
       chip.style.borderColor = '#c0392b';
@@ -235,7 +397,7 @@ function addChip(container, f, itemId, uploading = false) {
   rm.onclick  = () => {
     const it = getItem(itemId);
     if (it) it.files = it.files.filter(x => x.filename !== f.filename);
-    chip.remove(); updateBadge(itemId); renderPreview();
+    chip.remove(); updateBadge(itemId); renderPreview(); scheduleDraftSave();
   };
   chip.append(icon, name, rm);
   container.appendChild(chip);
@@ -338,6 +500,13 @@ async function submitClaim() {
     if (!res.ok) throw new Error();
     const { id } = await res.json();
     const isEdit = !!editId;
+
+    // Delete the draft on successful submit (fire and forget)
+    if (currentDraftId && !editId) {
+      fetch(`/api/drafts/${currentDraftId}`, { method: 'DELETE' }).catch(() => {});
+      currentDraftId = null;
+    }
+
     document.querySelector('.a4-sheet').innerHTML = `
       <div style="text-align:center;padding:64px 20px">
         <div style="font-size:48px;margin-bottom:16px">${isEdit ? '✏️' : '✅'}</div>
@@ -388,21 +557,86 @@ function printForm() {
 
 /* ── Print Receipts ─────────────────────────────────── */
 const IMAGE_EXTS = new Set(['jpg','jpeg','png','gif','webp','heic']);
+const PDF_EXTS   = new Set(['pdf']);
+const DOC_EXTS   = new Set(['docx','doc','msg']);
 
 function printReceipts() {
   const pages = [];
   items.forEach(item => {
     item.files.forEach(f => {
-      const ext = (f.original_name || '').split('.').pop().toLowerCase();
-      if (!IMAGE_EXTS.has(ext)) return;
-      pages.push({
-        url:   f.url,
-        label: (item.description || '') + (item.total ? '  —  SGD ' + parseFloat(item.total).toFixed(2) : '')
-      });
+      const ext   = (f.original_name || '').split('.').pop().toLowerCase();
+      const label = (item.description || '') + (item.total ? '  —  ' + (v('currency')||'SGD') + ' ' + parseFloat(item.total).toFixed(2) : '');
+      const base  = window.location.origin;
+      if (IMAGE_EXTS.has(ext)) {
+        pages.push({ type: 'image', url: base + f.url, label, name: f.original_name });
+      } else if (PDF_EXTS.has(ext)) {
+        // Serve PDF via /api/to-pdf so it comes through with correct headers
+        const fname = f.url.split('/').pop();
+        pages.push({ type: 'pdf', url: base + '/api/to-pdf/' + fname, label, name: f.original_name });
+      } else if (DOC_EXTS.has(ext)) {
+        // Convert DOCX/DOC/MSG to PDF server-side via LibreOffice
+        const fname = f.url.split('/').pop();
+        pages.push({ type: 'pdf', url: base + '/api/to-pdf/' + fname, label, name: f.original_name });
+      }
     });
   });
-  if (!pages.length) { alert('No image receipts attached. Please attach JPG or PNG files to your items first.'); return; }
+
+  if (!pages.length) { alert('No receipt files attached.'); return; }
   openReceiptWindow(pages, v('employee_name') || 'Claim');
+}
+
+function openReceiptWindow(pages, name) {
+  const origin   = window.location.origin;
+  const imgTotal = pages.filter(p => p.type === 'image').length;
+
+  const pageHtml = pages.map((p, i) => {
+    const lbl = `<div class="rl">${i + 1}. ${p.name || ''}${p.label ? '  —  ' + p.label : ''}</div>`;
+    if (p.type === 'image') {
+      return `<div class="rp">${lbl}<img src="${p.url}" onload="imgLoaded()" onerror="imgLoaded()"></div>`;
+    } else {
+      // PDF (native or converted) — use <iframe> which Chrome renders natively
+      return `<div class="rp rp-pdf">${lbl}<iframe src="${p.url}" frameborder="0" allowfullscreen></iframe></div>`;
+    }
+  }).join('');
+
+  const html = `<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>Receipts — ${name}</title>
+  <style>
+    *{box-sizing:border-box;margin:0;padding:0}
+    body{font-family:Arial,sans-serif;background:#f0f0f0}
+    h1{font-size:14px;color:#333;padding:14px 18px 10px;border-bottom:1px solid #ddd;background:#fff;position:sticky;top:0;z-index:10}
+    .rp{background:#fff;margin:16px auto;max-width:860px;padding:14px 18px 0;box-shadow:0 1px 6px rgba(0,0,0,.12);page-break-inside:avoid}
+    .rl{font-size:11px;color:#666;margin-bottom:8px;font-weight:600;text-transform:uppercase;letter-spacing:.04em}
+    img{width:100%;height:auto;display:block;margin-bottom:0}
+    iframe{width:100%;height:90vh;display:block;border:none}
+    @media print{
+      body{background:#fff}
+      h1{position:static}
+      .rp{box-shadow:none;margin:0;max-width:100%;padding:8px 0;border-top:1px solid #ccc;page-break-after:always}
+      .rp:first-child{border-top:none}
+      iframe{height:100vh}
+    }
+  </style>
+</head>
+<body>
+  <h1>Receipts — ${name}</h1>
+  ${pageHtml}
+  <script>
+    var imgTotal=${imgTotal},loaded=0;
+    function imgLoaded(){loaded++;if(loaded>=imgTotal)setTimeout(function(){window.print()},400);}
+    if(imgTotal===0)setTimeout(function(){window.print()},1200);
+  <\/script>
+</body>
+</html>`;
+
+  const blob    = new Blob([html], { type: 'text/html' });
+  const blobUrl = URL.createObjectURL(blob);
+  const win     = window.open(blobUrl, '_blank', 'width=960,height=780');
+  if (!win) { alert('Please allow pop-ups to print receipts.'); URL.revokeObjectURL(blobUrl); return; }
+  setTimeout(() => URL.revokeObjectURL(blobUrl), 15000);
 }
 
 /* ── History drawer ─────────────────────────────────── */
@@ -411,20 +645,47 @@ async function showHistory() {
   document.getElementById('history-drawer').classList.add('open');
   const body = document.getElementById('hist-body');
   body.innerHTML = '<div class="hist-empty">Loading…</div>';
+
   try {
-    const res  = await fetch('/api/submissions');
-    const subs = await res.json();
+    const [subsRes, draftsRes] = await Promise.all([
+      fetch('/api/submissions'),
+      fetch('/api/drafts'),
+    ]);
+    const subs   = subsRes.ok   ? await subsRes.json()   : [];
+    const drafts = draftsRes.ok ? await draftsRes.json() : [];
+
     histSubs = {};
     subs.forEach(s => { histSubs[s.id] = s; });
+    histDrafts = drafts;
+
     const count = document.getElementById('hist-count');
-    if (!subs.length) {
-      body.innerHTML = '<div class="hist-empty">No claims submitted yet.</div>';
+    const total = subs.length + drafts.length;
+    if (!total) {
+      body.innerHTML = '<div class="hist-empty">No claims or drafts yet.</div>';
       if (count) count.textContent = '';
       return;
     }
-    subs.sort((a, b) => (b.submitted_at||'').localeCompare(a.submitted_at||''));
-    if (count) count.textContent = `${subs.length} submission${subs.length !== 1 ? 's' : ''}`;
-    body.innerHTML = subs.map(s => histCard(s)).join('');
+    const parts = [];
+    if (drafts.length) parts.push(`${drafts.length} draft${drafts.length !== 1 ? 's' : ''}`);
+    if (subs.length)   parts.push(`${subs.length} submission${subs.length !== 1 ? 's' : ''}`);
+    if (count) count.textContent = parts.join(' · ');
+
+    let html = '';
+
+    // Drafts section
+    if (drafts.length) {
+      html += `<div class="hist-section-lbl">Drafts</div>`;
+      drafts.forEach(d => { html += draftCard(d); });
+    }
+
+    // Submitted claims section
+    if (subs.length) {
+      if (drafts.length) html += `<div class="hist-section-lbl">Submitted</div>`;
+      subs.sort((a, b) => (b.submitted_at||'').localeCompare(a.submitted_at||''));
+      subs.forEach(s => { html += histCard(s); });
+    }
+
+    body.innerHTML = html;
   } catch {
     body.innerHTML = '<div class="hist-empty">Could not load history.</div>';
   }
@@ -435,6 +696,41 @@ function closeHistory() {
   document.getElementById('history-drawer').classList.remove('open');
 }
 
+/* Draft card in history */
+function draftCard(d) {
+  const fdt = dt => dt ? new Date(dt).toLocaleDateString('en-GB',{day:'2-digit',month:'short',year:'numeric'}) : '—';
+  const fd  = dt => dt ? new Date(dt+'T00:00:00').toLocaleDateString('en-GB',{day:'2-digit',month:'short',year:'numeric'}) : '—';
+  const its    = (d.items||[]).filter(i => i.description || i.total);
+  const gTotal = its.reduce((a,i) => a+(parseFloat(i.total)||0), 0);
+  const amtStr = gTotal.toLocaleString('en-SG',{minimumFractionDigits:2,maximumFractionDigits:2});
+  const currency = d.currency || 'SGD';
+  const label  = d.claim_no ? `Claim #${esc(d.claim_no)}` : (d.employee_name ? esc(d.employee_name) : 'Untitled draft');
+
+  return `<div class="hc hc-draft" onclick="openDraftFromHistory('${d.id}')">
+    <div class="hc-top">
+      <div class="hc-left">
+        <div class="hc-row1">
+          <span class="hc-no">${label}</span>
+          <span class="hb hb-Draft">Draft</span>
+        </div>
+        <div class="hc-period">Period: ${fd(d.period_from)} – ${fd(d.period_to)}</div>
+        <div class="hc-submitted">Last edited ${fdt(d.updated_at)}</div>
+      </div>
+      <div class="hc-right">
+        <div class="hc-amount">${esc(currency)} ${amtStr}</div>
+        <div class="hc-actions" onclick="event.stopPropagation()">
+          <button class="hc-btn hc-trash" onclick="deleteDraft('${d.id}', event)" title="Delete draft">
+            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4h6v2"/></svg>
+            Delete
+          </button>
+        </div>
+      </div>
+      <div class="hc-chev">›</div>
+    </div>
+  </div>`;
+}
+
+/* Submitted claim card in history */
 function histCard(s) {
   const fd  = d  => d  ? new Date(d+'T00:00:00').toLocaleDateString('en-GB',{day:'2-digit',month:'short',year:'numeric'}) : '—';
   const fdt = dt => dt ? new Date(dt).toLocaleDateString('en-GB',{day:'2-digit',month:'short',year:'numeric'}) : '—';
@@ -461,164 +757,38 @@ function histCard(s) {
           <th class="r" style="width:72px">Total</th>
         </tr></thead>
         <tbody>${rows}</tbody>
-        <tfoot><tr class="hci-tot">
-          <td colspan="3">Total Reimbursement</td>
-          <td class="r">${gTotal.toFixed(2)}</td>
-        </tr></tfoot>
+        <tr class="hci-tot"><td colspan="3">Total</td><td class="r">${s.currency||'SGD'} ${amtStr}</td></tr>
       </table>`
-    : '<div class="hci-empty">No items recorded</div>';
+    : `<p class="hci-empty">No line items</p>`;
+
+  const noteHtml = s.notes ? `<div class="hci-note"><strong>Note:</strong> ${esc(s.notes)}</div>` : '';
 
   return `<div class="hc">
-    <div class="hc-top" onclick="toggleHistItem('${s.id}')">
+    <div class="hc-top" onclick="toggleHistItem(this)">
       <div class="hc-left">
         <div class="hc-row1">
-          <span class="hc-no">Claim #${esc(s.claim_no||s.id)}</span>
-          <span class="hb hb-${s.status}">${s.status}</span>
+          <span class="hc-no">#${esc(s.claim_no||'—')}</span>
+          <span class="hb hb-${s.status||'Pending'}">${s.status||'Pending'}</span>
           ${editedNote}
         </div>
         <div class="hc-period">Period: ${fd(s.period_from)} – ${fd(s.period_to)}</div>
         <div class="hc-submitted">Submitted ${fdt(s.submitted_at)}</div>
       </div>
       <div class="hc-right">
-        <div class="hc-amount">SGD ${amtStr}</div>
-        <div class="hc-actions" onclick="event.stopPropagation()">
-          <button class="hc-btn" onclick="printHistForm('${s.id}')">
-            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg>
-            Print
-          </button>
-          <button class="hc-btn hc-dl" onclick="dlHistExcel('${s.id}')">
-            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-            Excel
-          </button>
-        </div>
+        <div class="hc-amount">${esc(s.currency||'SGD')} ${amtStr}</div>
       </div>
-      <div class="hc-chev" id="chev-${s.id}">›</div>
+      <div class="hc-chev">›</div>
     </div>
-    <div class="hc-items" id="hci-${s.id}">
+    <div class="hc-items">
       ${itemsHtml}
-      ${s.notes ? `<div class="hci-note"><strong>Note:</strong> ${esc(s.notes)}</div>` : ''}
+      ${noteHtml}
     </div>
   </div>`;
 }
 
-function toggleHistItem(id) {
-  document.getElementById(`hci-${id}`)?.classList.toggle('open');
-  document.getElementById(`chev-${id}`)?.classList.toggle('open');
-}
-
-function printHistForm(sid) {
-  const s = histSubs[sid];
-  if (!s) return;
-  const fd  = d => d ? new Date(d+'T00:00:00').toLocaleDateString('en-GB',{day:'2-digit',month:'short',year:'numeric'}) : '—';
-  const fn  = n => n ? parseFloat(n).toFixed(2) : '';
-  const its = (s.items||[]).filter(i => i.description || i.total);
-  const tot = its.reduce((a,i) => a+(parseFloat(i.total)||0), 0);
-  const rows = its.map(i => `<tr>
-    <td style="text-align:center;border:1px solid #000;padding:4px 6px">${fd(i.date)}</td>
-    <td style="border:1px solid #000;padding:4px 8px">${esc(i.description||'')}</td>
-    <td style="text-align:right;border:1px solid #000;padding:4px 6px">${fn(i.gst)}</td>
-    <td style="text-align:right;border:1px solid #000;padding:4px 6px">${fn(i.total)}</td>
-  </tr>`).join('');
-  const win = window.open('', '_blank', 'width=900,height=800');
-  if (!win) { alert('Please allow pop-ups to print.'); return; }
-  win.document.write(`<!DOCTYPE html><html><head><meta charset="UTF-8">
-<title>Claim — ${esc(s.employee_name)}</title>
-<style>
-*{margin:0;padding:0;box-sizing:border-box}
-body{font-family:'Century Gothic','Gill Sans MT',sans-serif;font-size:11pt;padding:36px 40px;background:#fff;color:#000}
-.logo{height:28px;margin-bottom:20px}
-.meta{display:flex;justify-content:space-between;margin-bottom:16px}
-.meta-left .row{margin-bottom:6px}
-.meta-left .key{font-size:9pt}
-.meta-left .val{border-bottom:1px solid #666;display:inline-block;min-width:160px;padding:0 4px}
-.pb{border:1px solid #000;text-align:center;padding:2px 8px;display:inline-block;min-width:90px}
-.pt{font-weight:700;text-align:center;margin-bottom:4px}
-.pr{display:flex;gap:8px}
-table{width:100%;border-collapse:collapse;margin-bottom:12px}
-th{background:#44546A;color:#fff;padding:5px 8px;font-size:9pt;text-align:left;border:1px solid #000}
-th.c{text-align:center}th.r{text-align:right}
-.sig{display:flex;gap:40px;margin:24px 0 16px}
-.sig-block .line{border-bottom:1px solid #000;width:160px;height:28px;margin-bottom:4px}
-.sig-block .lbl{font-size:9pt}
-.footer{margin-top:32px;border-top:1px solid #ccc;padding-top:8px;font-size:8pt;color:#555}
-@page{margin:0}@media print{body{padding:8mm 10mm}}
-</style></head><body>
-<img src="/static/logo.jpg" class="logo" />
-<div class="meta">
-  <div class="meta-left">
-    <div class="row"><span class="key">Employee's Name:</span> <span class="val">${esc(s.employee_name)}</span></div>
-    <div class="row"><span class="key">Claim Form no.:</span> <span class="val">${esc(s.claim_no||'')}</span></div>
-  </div>
-  <div class="meta-right">
-    <div class="pt">CLAIM PERIOD</div>
-    <div class="pr">
-      <div><div style="text-align:center;font-size:9pt">FROM</div><div class="pb">${fd(s.period_from)}</div></div>
-      <div><div style="text-align:center;font-size:9pt">TO</div><div class="pb">${fd(s.period_to)}</div></div>
-    </div>
-  </div>
-</div>
-<table>
-  <thead><tr>
-    <th class="c" style="width:90px">DATE</th>
-    <th>DESCRIPTION</th>
-    <th class="r" style="width:110px">GST amount on each bill</th>
-    <th class="r" style="width:100px">TOTAL (SGD)</th>
-  </tr></thead>
-  <tbody>${rows}</tbody>
-  <tfoot><tr>
-    <td colspan="3" style="text-align:right;border:1px solid #000;padding:5px 8px;font-weight:700;border-top:2px solid #000">Total Reimbursement</td>
-    <td style="text-align:right;border:1px solid #000;padding:5px 8px;font-weight:700;border-top:2px solid #000">${tot.toFixed(2)}</td>
-  </tr></tfoot>
-</table>
-<div class="sig">
-  <div class="sig-block"><div class="line"></div><div class="lbl">Received by &nbsp;&nbsp; Date ___________</div></div>
-  <div class="sig-block"><div class="line"></div><div class="lbl">Approved by &nbsp;&nbsp; Date ___________</div></div>
-</div>
-${s.notes ? `<p style="margin-bottom:8px"><strong>Note:</strong> ${esc(s.notes)}</p>` : ''}
-<div class="footer">
-  <strong>Ternary Fund Management Pte Ltd</strong> &nbsp;·&nbsp; UEN: 201902851Z<br>
-  50 Armenian Street #02-04 Wilmer Place, Singapore 179938 &nbsp;·&nbsp; +65 6970 6272 &nbsp;·&nbsp; admin@ternaryfmc.com
-</div>
-<script>window.onload=function(){window.print();}<\/script>
-</body></html>`);
-  win.document.close();
-}
-
-async function dlHistExcel(sid) {
-  const s = histSubs[sid];
-  if (!s) return;
-  try {
-    const res  = await fetch('/api/generate-excel', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(s) });
-    if (!res.ok) throw new Error();
-    const blob = await res.blob();
-    const url  = URL.createObjectURL(blob);
-    const a    = document.createElement('a');
-    a.href = url;
-    a.download = res.headers.get('Content-Disposition')?.match(/filename="(.+)"/)?.[1] || 'claim.xlsx';
-    a.click();
-    URL.revokeObjectURL(url);
-  } catch { alert('Failed to generate Excel.'); }
-}
-
-function openReceiptWindow(pages, title) {
-  const win = window.open('', '_blank', 'width=900,height=700');
-  if (!win) { alert('Please allow pop-ups to print receipts.'); return; }
-  const html = pages.map((p, i) => `
-    <div class="rpage" style="${i < pages.length-1 ? 'page-break-after:always;' : ''}">
-      <img src="${p.url}" class="rimg" />
-      <div class="rwm">${esc(p.label)}</div>
-    </div>`).join('');
-  win.document.write(`<!DOCTYPE html><html><head><meta charset="UTF-8">
-<title>Receipts — ${esc(title)}</title>
-<style>
-*{margin:0;padding:0;box-sizing:border-box}
-body{background:#fff;font-family:'Century Gothic',sans-serif}
-.rpage{position:relative;width:100vw;height:100vh;display:flex;align-items:center;justify-content:center;overflow:hidden;background:#fff}
-.rimg{max-width:100%;max-height:100%;object-fit:contain}
-.rwm{position:absolute;bottom:24px;right:28px;font-size:12pt;font-weight:700;color:rgba(0,0,0,0.32);text-align:right;max-width:60%}
-@page{margin:0}@media print{.rpage{width:100%;height:100vh}}
-</style></head><body>${html}
-<script>window.onload=function(){window.print();}<\/script>
-</body></html>`);
-  win.document.close();
+function toggleHistItem(topEl) {
+  const chev  = topEl.querySelector('.hc-chev');
+  const items = topEl.nextElementSibling;
+  const open  = items.classList.toggle('open');
+  chev.classList.toggle('open', open);
 }

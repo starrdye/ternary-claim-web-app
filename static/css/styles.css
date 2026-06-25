@@ -239,7 +239,7 @@ body {
 .th-gst   { width: 22%; }
 .th-total { width: 24%; }
 .th-docs  { width: 44px; }
-.th-del   { width: 26px; border-color: transparent !important; background: transparent !important; }
+.th-del   { width: 0; padding: 0 !important; border-color: transparent !important; background: transparent !important; }
 
 /* Body cells */
 .claim-table tbody td {
@@ -281,9 +281,12 @@ body {
 }
 
 /* The last two columns (docs / delete) have no Excel border */
-.claim-table tbody td.td-docs,
-.claim-table tbody td.td-del {
+.claim-table tbody td.td-docs {
   border-color: transparent;
+  background: transparent !important;
+}
+.claim-table tbody td.td-del {
+  border-color: transparent !important;
   background: transparent !important;
 }
 
@@ -312,19 +315,23 @@ body {
 .cell-in[type="number"] { text-align: right; }
 
 /* Docs attach button */
-.td-docs { text-align: center; padding: 3px 4px !important; }
+.td-docs { text-align: center; padding: 3px 4px !important; overflow: visible; }
 .docs-btn {
   background: none;
   border: 1px solid var(--border-l);
   border-radius: 3px;
-  padding: 2px 6px;
-  font-size: 13px;
+  padding: 3px 8px;
+  font-size: 11px;
   cursor: pointer;
   color: var(--slate);
   position: relative;
   transition: all 0.1s;
+  overflow: visible;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
 }
-.docs-btn:hover { background: var(--slate); color: #fff; }
+.docs-btn:hover { background: var(--slate); color: #fff; border-color: var(--slate); }
 .doc-badge {
   position: absolute;
   top: -5px; right: -6px;
@@ -339,19 +346,36 @@ body {
 }
 
 /* Row delete button */
-.td-del { text-align: center; padding: 2px !important; }
-.del-btn {
-  background: none;
-  border: none;
-  color: #ccc;
-  font-size: 15px;
-  cursor: pointer;
-  padding: 1px 4px;
-  line-height: 1;
-  border-radius: 2px;
-  transition: color 0.1s;
+.td-del {
+  width: 0;
+  padding: 0 !important;
+  border: none !important;
+  background: transparent !important;
+  overflow: visible;
+  white-space: nowrap;
 }
-.del-btn:hover { color: #c0392b; }
+.del-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin-left: 5px;
+  width: 20px;
+  height: 20px;
+  background: none;
+  border: 1px solid transparent;
+  border-radius: 3px;
+  color: transparent;
+  font-size: 13px;
+  cursor: pointer;
+  line-height: 1;
+  transition: all 0.12s;
+  vertical-align: middle;
+}
+tr:hover .del-btn {
+  color: #bbb;
+  border-color: #e0e4ea;
+}
+.del-btn:hover { color: #c0392b !important; border-color: #f5b7b1 !important; background: #fdecea; }
 
 /* Total footer row */
 .claim-table tfoot .total-row td {
@@ -374,8 +398,7 @@ body {
   font-size: 11pt;
   font-variant-numeric: tabular-nums;
 }
-.claim-table tfoot .total-row td.td-docs,
-.claim-table tfoot .total-row td.td-del {
+.claim-table tfoot .total-row td.td-docs {
   border-color: transparent;
   background: transparent;
 }
@@ -622,6 +645,23 @@ body {
 .chip-rm { cursor: pointer; color: #bbb; font-size: 16px; line-height: 1; flex-shrink: 0; }
 .chip-rm:hover { color: #c0392b; }
 
+/* ── Draft save status indicator ───────────────────── */
+.draft-status {
+  font-size: 11px;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 3px;
+  transition: opacity 0.3s;
+  white-space: nowrap;
+  min-width: 80px;
+}
+.draft-status.saving {
+  color: rgba(255,255,255,0.6);
+}
+.draft-status.saved {
+  color: var(--gold);
+}
+
 /* ═══════════════════════════════════════════════════
    HISTORY DRAWER
 ═══════════════════════════════════════════════════ */
@@ -715,6 +755,35 @@ body {
 .hc-chev { font-size: 16px; color: #bbb; align-self: center; flex-shrink: 0; transition: transform 0.2s; }
 .hc-chev.open { transform: rotate(90deg); }
 
+/* History section labels (Drafts / Submitted) */
+.hist-section-lbl {
+  font-size: 9.5px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--muted);
+  padding: 6px 4px 3px;
+  margin-top: 4px;
+}
+
+/* Draft cards — clickable, slightly tinted */
+.hc-draft {
+  cursor: pointer;
+  border-color: #b8c8e0;
+  background: #f6f9fd;
+}
+.hc-draft .hc-top { cursor: pointer; }
+.hc-draft:hover { background: #eef3fb; }
+.hc-draft .hc-chev { color: var(--slate); }
+
+/* Trash / delete draft button */
+.hc-btn.hc-trash {
+  background: #fdecea;
+  color: #c0392b;
+  border-color: #f5b7b1;
+}
+.hc-btn.hc-trash:hover { background: #c0392b; color: #fff; border-color: #c0392b; }
+
 /* Status badges */
 .hb {
   display: inline-block; border-radius: 3px; padding: 2px 7px;
@@ -723,6 +792,7 @@ body {
 .hb-Pending  { background: #fff3cd; color: #856404; border: 1px solid #ffc10755; }
 .hb-Approved { background: #d4edda; color: #155724; border: 1px solid #28a74555; }
 .hb-Rejected { background: #f8d7da; color: #721c24; border: 1px solid #dc354555; }
+.hb-Draft    { background: #e3eaf5; color: var(--slate); border: 1px solid #b8c8e055; }
 
 /* Expanded items */
 .hc-items {
@@ -797,27 +867,4 @@ body {
     print-color-adjust: exact;
   }
 
-  /* Remove hover/stripe backgrounds for clean print */
-  .claim-table tbody tr:nth-child(even) td { background: transparent !important; }
-  .claim-table tbody tr:hover td { background: transparent !important; }
-
-  /* Strip browser input styling — inputs look like plain text */
-  .cell-in, .meta-val, .meta-date, .flatpickr-input, .note-input {
-    border: none !important;
-    outline: none !important;
-    background: transparent !important;
-    -webkit-appearance: none;
-    appearance: none;
-  }
-  .meta-val { border-bottom: 1px solid #888 !important; }
-  .meta-date { border: 1px solid #000 !important; text-align: center; }
-}
-
-/* ═══════════════════════════════════════════════════
-   RESPONSIVE
-═══════════════════════════════════════════════════ */
-@media (max-width: 860px) {
-  .page-layout { grid-template-columns: 1fr; height: auto; overflow: visible; }
-  .preview-panel { height: 50vh; border-left: none; border-top: 2px solid var(--slate); }
-  .form-panel { overflow: visible; }
-}
+  /* Remove hover/stripe backgrounds for 
