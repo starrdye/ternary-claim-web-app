@@ -341,39 +341,164 @@ async function adminPrintReceipts() {
   if (!s) return;
 
   const IMAGE_EXTS = new Set(['jpg','jpeg','png','gif','webp','heic']);
+  const PDF_EXTS   = new Set(['pdf']);
+  const DOC_EXTS   = new Set(['docx','doc','msg']);
   const pages = [];
+
   (s.attachments || []).forEach(att => {
     const ext = (att.original_name || '').split('.').pop().toLowerCase();
-    if (!IMAGE_EXTS.has(ext)) return;
     const itemIdx = (att.item_index || 1) - 1;
     const item    = (s.items || [])[itemIdx] || {};
     const desc    = att.description || item.description || '';
-    const amount  = item.total ? '  —  SGD ' + parseFloat(item.total).toFixed(2) : '';
-    pages.push({ url: att.url, label: desc + amount });
+    const currency = s.currency || 'SGD';
+    const amount  = item.total ? '  —  ' + currency + ' ' + parseFloat(item.total).toFixed(2) : '';
+    const label   = (att.original_name || '') + (desc || amount ? '  —  ' + desc + amount : '');
+    const base    = window.location.origin;
+
+    if (IMAGE_EXTS.has(ext)) {
+      pages.push({ type: 'image', url: base + att.url, label });
+    } else if (PDF_EXTS.has(ext)) {
+      const fname = att.url.split('/').pop();
+      pages.push({ type: 'pdf', url: base + '/api/to-pdf/' + fname, label });
+    } else if (DOC_EXTS.has(ext)) {
+      const fname = att.url.split('/').pop();
+      pages.push({ type: 'pdf', url: base + '/api/to-pdf/' + fname, label });
+    }
   });
 
-  if (!pages.length) { alert('No image receipts in this submission.'); return; }
+  if (!pages.length) { alert('No receipt files in this submission.'); return; }
 
-  const win = window.open('', '_blank', 'width=900,height=700');
-  if (!win) { alert('Please allow pop-ups to print.'); return; }
-  const html = pages.map((p, i) => `
-    <div class="rpage" style="${i < pages.length-1 ? 'page-break-after:always;' : ''}">
-      <img src="${p.url}" class="rimg" />
-      <div class="rwm">${esc(p.label)}</div>
-    </div>`).join('');
-  win.document.write(`<!DOCTYPE html><html><head><meta charset="UTF-8">
-<title>Receipts — ${esc(s.employee_name)}</title>
-<style>
-*{margin:0;padding:0;box-sizing:border-box}
-body{background:#fff;font-family:'Century Gothic',sans-serif}
-.rpage{position:relative;width:100vw;height:100vh;display:flex;align-items:center;justify-content:center;overflow:hidden;background:#fff}
-.rimg{max-width:100%;max-height:100%;object-fit:contain}
-.rwm{position:absolute;bottom:24px;right:28px;font-size:12pt;font-weight:700;color:rgba(0,0,0,0.32);text-align:right;max-width:60%}
-@page{margin:0}@media print{.rpage{width:100%;height:100vh}}
-</style></head><body>${html}
-<script>window.onload=function(){window.print();}<\/script>
-</body></html>`);
-  win.document.close();
+  const imgTotal = pages.filter(p => p.type === 'image').length;
+
+  const pageHtml = pages.map((p, i) => {
+    if (p.type === 'image') {
+      return `
+        <div class="rpage">
+          <img src="${p.url}" class="rimg" onload="imgLoaded()" onerror="imgLoaded()" />
+          <div class="rwm">${esc(p.label)}</div>
+        </div>`;
+    } else {
+      return `
+        <div class="rpage-pdf-container" data-url="${p.url}" data-label="${esc(p.label)}">
+        </div>`;
+    }
+  }).join('');
+
+  const html = `<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>Receipts — ${esc(s.employee_name)}</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.4.120/pdf.min.js"></script>
+  <style>
+    *{margin:0;padding:0;box-sizing:border-box}
+    body{background:#fff;font-family:'Century Gothic',sans-serif}
+    .rpage{position:relative;width:100vw;height:100vh;display:flex;align-items:center;justify-content:center;overflow:hidden;background:#fff;page-break-after:always}
+    .rimg{max-width:100%;max-height:100%;object-fit:contain}
+    .rwm{position:absolute;bottom:24px;right:28px;font-size:12pt;font-weight:700;color:rgba(0,0,0,0.32);text-align:right;max-width:60%;z-index:10}
+    
+    .rpage-pdf-container { display: contents; }
+    .pdf-page-wrapper { position: relative; width: 100vw; height: 100vh; display: flex; align-items:center; justify-content:center; overflow:hidden; background:#fff; page-break-after:always }
+    .pdf-page-wrapper canvas { max-width: 100%; max-height: 100%; object-fit: contain; }
+    
+    @page{margin:0}
+    @media print{
+      .rpage, .pdf-page-wrapper{width:100%;height:100vh}
+    }
+  </style>
+</head>
+<body>
+  ${pageHtml}
+  <script>
+    pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.4.120/pdf.worker.min.js';
+
+    var imgTotal = ${imgTotal}, imgLoadedCount = 0;
+    var pdfsCount = 0, pdfsLoaded = 0;
+
+    function imgLoaded() {
+      imgLoadedCount++;
+      checkReady();
+    }
+
+    function checkReady() {
+      if (imgLoadedCount >= imgTotal && pdfsLoaded >= pdfsCount) {
+        const pages = document.querySelectorAll('.rpage, .pdf-page-wrapper');
+        if (pages.length > 0) {
+          pages[pages.length - 1].style.pageBreakAfter = 'avoid';
+        }
+        setTimeout(function() {
+          window.print();
+        }, 800);
+      }
+    }
+
+    window.onload = function() {
+      const containers = document.querySelectorAll('.rpage-pdf-container');
+      pdfsCount = containers.length;
+
+      if (pdfsCount === 0 && imgTotal === 0) {
+        setTimeout(function(){ window.print(); }, 1200);
+        return;
+      }
+
+      if (pdfsCount === 0) {
+        checkReady();
+        return;
+      }
+
+      containers.forEach(async (container) => {
+        const url = container.getAttribute('data-url');
+        const label = container.getAttribute('data-label');
+        try {
+          const loadingTask = pdfjsLib.getDocument(url);
+          const pdf = await loadingTask.promise;
+          for (let pageNum = 1; pageNum <= pdf.numPages; pageNum++) {
+            const page = await pdf.getPage(pageNum);
+            const viewport = page.getViewport({ scale: 1.5 });
+            
+            const wrapper = document.createElement('div');
+            wrapper.className = 'pdf-page-wrapper';
+            
+            const canvas = document.createElement('canvas');
+            const context = canvas.getContext('2d');
+            canvas.height = viewport.height;
+            canvas.width = viewport.width;
+            
+            const wm = document.createElement('div');
+            wm.className = 'rwm';
+            wm.textContent = label;
+            
+            wrapper.appendChild(canvas);
+            wrapper.appendChild(wm);
+            container.appendChild(wrapper);
+            
+            await page.render({ canvasContext: context, viewport: viewport }).promise;
+          }
+        } catch (e) {
+          console.error("Failed to render PDF: " + url, e);
+          const wrapper = document.createElement('div');
+          wrapper.className = 'pdf-page-wrapper';
+          wrapper.style.color = 'red';
+          wrapper.style.display = 'flex';
+          wrapper.style.alignItems = 'center';
+          wrapper.style.justifyContent = 'center';
+          wrapper.textContent = 'Failed to load PDF: ' + (e.message || '');
+          container.appendChild(wrapper);
+        } finally {
+          pdfsLoaded++;
+          checkReady();
+        }
+      });
+    };
+  <\/script>
+</body>
+</html>`;
+
+  const blob    = new Blob([html], { type: 'text/html' });
+  const blobUrl = URL.createObjectURL(blob);
+  const win     = window.open(blobUrl, '_blank', 'width=900,height=700');
+  if (!win) { alert('Please allow pop-ups to print.'); URL.revokeObjectURL(blobUrl); return; }
+  setTimeout(() => URL.revokeObjectURL(blobUrl), 15000);
 }
 
 /* ── Download Excel from drawer ─────────────────────── */

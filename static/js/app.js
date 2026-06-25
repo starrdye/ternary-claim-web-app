@@ -594,8 +594,8 @@ function openReceiptWindow(pages, name) {
     if (p.type === 'image') {
       return `<div class="rp">${lbl}<img src="${p.url}" onload="imgLoaded()" onerror="imgLoaded()"></div>`;
     } else {
-      // PDF (native or converted) — use <iframe> which Chrome renders natively
-      return `<div class="rp rp-pdf">${lbl}<iframe src="${p.url}" frameborder="0" allowfullscreen></iframe></div>`;
+      // PDF (native or converted) — render as canvas using PDF.js
+      return `<div class="rp">${lbl}<div class="pdf-canvas-container" data-url="${p.url}"></div></div>`;
     }
   }).join('');
 
@@ -604,20 +604,25 @@ function openReceiptWindow(pages, name) {
 <head>
   <meta charset="UTF-8">
   <title>Receipts — ${name}</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.4.120/pdf.min.js"></script>
   <style>
     *{box-sizing:border-box;margin:0;padding:0}
     body{font-family:Arial,sans-serif;background:#f0f0f0}
     h1{font-size:14px;color:#333;padding:14px 18px 10px;border-bottom:1px solid #ddd;background:#fff;position:sticky;top:0;z-index:10}
-    .rp{background:#fff;margin:16px auto;max-width:860px;padding:14px 18px 0;box-shadow:0 1px 6px rgba(0,0,0,.12);page-break-inside:avoid}
+    .rp{background:#fff;margin:16px auto;max-width:860px;padding:14px 18px 18px;box-shadow:0 1px 6px rgba(0,0,0,.12);page-break-inside:avoid}
     .rl{font-size:11px;color:#666;margin-bottom:8px;font-weight:600;text-transform:uppercase;letter-spacing:.04em}
     img{width:100%;height:auto;display:block;margin-bottom:0}
-    iframe{width:100%;height:90vh;display:block;border:none}
+    
+    .pdf-canvas-container { display: flex; flex-direction: column; gap: 12px; width: 100%; }
+    .pdf-canvas-container canvas { width: 100%; height: auto; display: block; margin: 0 auto; background: #fff; border: 1px solid #ddd; }
+    
     @media print{
       body{background:#fff}
       h1{position:static}
       .rp{box-shadow:none;margin:0;max-width:100%;padding:8px 0;border-top:1px solid #ccc;page-break-after:always}
       .rp:first-child{border-top:none}
-      iframe{height:100vh}
+      .pdf-canvas-container canvas { border: none; box-shadow: none; page-break-after: always; }
+      .pdf-canvas-container canvas:last-child { page-break-after: avoid; }
     }
   </style>
 </head>
@@ -625,10 +630,68 @@ function openReceiptWindow(pages, name) {
   <h1>Receipts — ${name}</h1>
   ${pageHtml}
   <script>
-    var imgTotal=${imgTotal},loaded=0;
-    function imgLoaded(){loaded++;if(loaded>=imgTotal)setTimeout(function(){window.print()},400);}
-    if(imgTotal===0)setTimeout(function(){window.print()},1200);
-  <\/script>
+    pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.4.120/pdf.worker.min.js';
+
+    var imgTotal = ${imgTotal}, imgLoadedCount = 0;
+    var pdfsCount = 0, pdfsLoaded = 0;
+
+    function imgLoaded() {
+      imgLoadedCount++;
+      checkReady();
+    }
+
+    function checkReady() {
+      if (imgLoadedCount >= imgTotal && pdfsLoaded >= pdfsCount) {
+        setTimeout(function() {
+          window.print();
+        }, 800);
+      }
+    }
+
+    window.onload = function() {
+      const containers = document.querySelectorAll('.pdf-canvas-container');
+      pdfsCount = containers.length;
+
+      if (pdfsCount === 0 && imgTotal === 0) {
+        setTimeout(function(){ window.print(); }, 1200);
+        return;
+      }
+
+      if (pdfsCount === 0) {
+        checkReady();
+        return;
+      }
+
+      containers.forEach(async (container) => {
+        const url = container.getAttribute('data-url');
+        try {
+          const loadingTask = pdfjsLib.getDocument(url);
+          const pdf = await loadingTask.promise;
+          for (let pageNum = 1; pageNum <= pdf.numPages; pageNum++) {
+            const page = await pdf.getPage(pageNum);
+            const viewport = page.getViewport({ scale: 1.5 });
+            const canvas = document.createElement('canvas');
+            const context = canvas.getContext('2d');
+            canvas.height = viewport.height;
+            canvas.width = viewport.width;
+            await page.render({ canvasContext: context, viewport: viewport }).promise;
+            container.appendChild(canvas);
+          }
+        } catch (e) {
+          console.error("Failed to render PDF: " + url, e);
+          const errDiv = document.createElement('div');
+          errDiv.style.color = 'red';
+          errDiv.style.fontSize = '12px';
+          errDiv.style.padding = '8px';
+          errDiv.textContent = 'Failed to load PDF receipt. ' + (e.message || '');
+          container.appendChild(errDiv);
+        } finally {
+          pdfsLoaded++;
+          checkReady();
+        }
+      });
+    };
+  </script>
 </body>
 </html>`;
 

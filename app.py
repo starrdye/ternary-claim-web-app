@@ -191,6 +191,25 @@ def print_receipts_page():
     return render_template('print_receipts.html', files=files, name=name)
 
 
+def _find_libreoffice():
+    import shutil
+    cmd = shutil.which('libreoffice')
+    if cmd:
+        return cmd
+    cmd = shutil.which('soffice')
+    if cmd:
+        return cmd
+    if os.name == 'nt':
+        paths = [
+            r"C:\Program Files\LibreOffice\program\soffice.exe",
+            r"C:\Program Files (x86)\LibreOffice\program\soffice.exe",
+        ]
+        for p in paths:
+            if os.path.exists(p):
+                return p
+    return None
+
+
 @app.route('/api/to-pdf/<path:filename>')
 @login_required
 def convert_to_pdf(filename):
@@ -206,10 +225,16 @@ def convert_to_pdf(filename):
         return send_from_directory(app.config['UPLOAD_FOLDER'], filename,
                                    mimetype='application/pdf')
 
+    libreoffice_bin = _find_libreoffice()
+    if not libreoffice_bin:
+        return jsonify({
+            'error': 'LibreOffice not found. To support converting Word (.docx/.doc) and .msg files to PDF, please install LibreOffice.'
+        }), 500
+
     try:
         with tempfile.TemporaryDirectory() as tmpdir:
             result = subprocess.run(
-                ['libreoffice', '--headless', '--convert-to', 'pdf',
+                [libreoffice_bin, '--headless', '--convert-to', 'pdf',
                  '--outdir', tmpdir, src_path],
                 capture_output=True, timeout=60
             )
