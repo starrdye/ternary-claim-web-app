@@ -85,27 +85,29 @@
       </div>
 
       <!-- ③ Table -->
-      <table class="claim-table">
-        <thead>
-          <tr>
-            <th class="th-date">DATE</th>
-            <th class="th-desc">DESCRIPTION</th>
-            <th class="th-gst">GST amount<br><small>on each bill</small></th>
-            <th class="th-total">TOTAL (<input id="currency" class="currency-in" type="text" value="SGD" maxlength="6" placeholder="SGD" title="Click to change currency" />)</th>
-            <th class="th-docs">DOCS</th>
-            <th class="th-del"></th>
-          </tr>
-        </thead>
-        <tbody id="items-tbody"></tbody>
-        <tfoot>
-          <tr class="total-row">
-            <td colspan="3" class="total-label-cell">Total Reimbursement</td>
-            <td class="total-val-cell" id="grand-total">0.00</td>
-            <td class="td-docs"></td>
-            <td class="td-del"></td>
-          </tr>
-        </tfoot>
-      </table>
+      <div class="table-responsive">
+        <table class="claim-table">
+          <thead>
+            <tr>
+              <th class="th-date">DATE</th>
+              <th class="th-desc">DESCRIPTION</th>
+              <th class="th-gst">GST amount<br><small>on each bill</small></th>
+              <th class="th-total">TOTAL (<input id="currency" class="currency-in" type="text" value="SGD" maxlength="6" placeholder="SGD" title="Click to change currency" />)</th>
+              <th class="th-docs">DOCS</th>
+              <th class="th-del"></th>
+            </tr>
+          </thead>
+          <tbody id="items-tbody"></tbody>
+          <tfoot>
+            <tr class="total-row">
+              <td colspan="3" class="total-label-cell">Total Reimbursement</td>
+              <td class="total-val-cell" id="grand-total">0.00</td>
+              <td class="td-docs"></td>
+              <td class="td-del"></td>
+            </tr>
+          </tfoot>
+        </table>
+      </div>
 
       <div class="add-row-wrap">
         <button class="add-row-btn" onclick="addItem()">+ Add Row</button>

@@ -859,4 +859,114 @@ tr:hover .del-btn {
     print-color-adjust: exact;
   }
 
-  /* Remove hover/stripe backgrounds for 
+  /* Remove hover/stripe backgrounds for print */
+  .claim-table tbody tr:nth-child(even) td { background: transparent !important; }
+  .claim-table tbody tr:hover td { background: transparent !important; }
+}
+
+/* ═══════════════════════════════════════════════════
+   MOBILE RESPONSIVENESS
+═══════════════════════════════════════════════════ */
+@media (max-width: 992px) {
+  .page-layout {
+    display: flex;
+    flex-direction: column;
+    height: auto;
+    overflow: visible;
+  }
+  .form-panel {
+    padding: 16px 12px;
+    height: auto;
+    overflow: visible;
+  }
+  .preview-panel {
+    border-left: none;
+    border-top: 1px solid var(--border-l);
+    height: auto;
+  }
+  .preview-scroll {
+    padding: 16px 12px;
+  }
+}
+
+@media (max-width: 768px) {
+  .topbar {
+    height: auto;
+    padding: 8px 12px;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 8px;
+  }
+  .topbar-left {
+    justify-content: space-between;
+    width: 100%;
+  }
+  .topbar-right {
+    overflow-x: auto;
+    padding-bottom: 4px;
+    -webkit-overflow-scrolling: touch;
+    justify-content: flex-start;
+    width: 100%;
+    gap: 8px;
+  }
+  .topbar-right::-webkit-scrollbar {
+    display: none;
+  }
+  .tb-user {
+    display: none;
+  }
+  .tb-btn {
+    flex-shrink: 0;
+  }
+  
+  .a4-sheet {
+    padding: 18px 16px 14px;
+    font-size: 10pt;
+  }
+  .sheet-logo {
+    height: 32px;
+  }
+  
+  .sheet-meta {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 12px;
+  }
+  .meta-right {
+    align-self: flex-start;
+  }
+  .period-inputs {
+    justify-content: flex-start;
+  }
+  .period-labels {
+    justify-content: flex-start;
+    gap: 10px;
+  }
+  .period-labels span {
+    width: 110px;
+    text-align: center;
+  }
+
+  .table-responsive {
+    width: 100%;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    margin-bottom: 16px;
+    border: 1px solid var(--border-l);
+    border-radius: 4px;
+  }
+  .claim-table {
+    min-width: 600px;
+    table-layout: fixed;
+  }
+}
+
+@media (max-width: 576px) {
+  .sig-section {
+    grid-template-columns: 1fr;
+    gap: 24px;
+  }
+  .a4-sheet {
+    padding: 14px 10px 10px;
+  }
+}
