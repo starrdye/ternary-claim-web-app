@@ -90,11 +90,17 @@ claim-webapp/
 | Total (SGD) | Full amount in SGD including GST |
 | Notes | Additional context for Finance |
 
-## File Uploads
+## File Uploads & Document Conversion
 
 Each line item has its own upload button (📎). Click to open the upload modal, then drag & drop or click to browse. Multiple files per item are supported. All uploaded files are listed in the **Attachments** sheet of the generated Excel.
 
 Supported formats: JPG, PNG, PDF, MSG, DOCX, GIF, WEBP, HEIC, DOC.
+
+### Document Conversion Mechanics
+To ensure seamless document viewing and printing without browser layout issues:
+1. **Immediate Pre-conversion:** Any uploaded Word documents (`.docx`, `.doc`) or Outlook mail items (`.msg`) are immediately converted to standard PDF format on the server at the moment of upload. This gives immediate feedback if a document cannot be processed and ensures print preview loading is instantaneous.
+2. **Windows COM Automation Fallback:** The server automatically detects if headless LibreOffice is installed. On Windows, if LibreOffice is not present, the server falls back to native **Microsoft Office COM Automation** (via `pywin32`) to convert files with high-fidelity using installed Microsoft Word and Outlook.
+3. **High-Fidelity Canvas Printing:** To bypass browser limitations regarding printing embedded PDFs inside `<iframe>` tags, the receipt print preview utilizes **PDF.js** client-side to render PDF pages onto HTML `<canvas>` elements. This guarantees all documents display correctly in the browser's native print preview dialog on the first try. A status banner tracks loading progress and handles rendering state safety.
 
 ## API Reference
 
