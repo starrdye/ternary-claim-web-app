@@ -282,10 +282,6 @@ body {
 }
 
 /* The last two columns (docs / delete) have no Excel border */
-.claim-table tbody td.td-docs {
-  border-color: transparent;
-  border-right: 1px solid var(--border);
-}
 .claim-table tbody td.td-del {
   border-color: transparent !important;
 }
@@ -315,7 +311,7 @@ body {
 .cell-in[type="number"] { text-align: right; }
 
 /* Docs attach button */
-.td-docs { text-align: center; padding: 3px 4px !important; overflow: visible; width: 54px; }
+.td-docs { text-align: center; padding: 3px 4px !important; overflow: visible; width: 54px; border: 1px solid var(--border) !important; }
 .docs-btn {
   background: none;
   border: 1px solid var(--border-l);
@@ -397,10 +393,6 @@ tr:hover .del-btn {
   text-align: right;
   font-size: 11pt;
   font-variant-numeric: tabular-nums;
-}
-.claim-table tfoot .total-row td.td-docs {
-  border-color: transparent;
-  background: transparent;
 }
 
 /* Add row button */
