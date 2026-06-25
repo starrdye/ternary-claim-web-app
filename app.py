@@ -19,8 +19,10 @@ COMPANY_NAME = "Ternary Fund Management Pte Ltd"
 COMPANY_UEN = "UEN: 201902851Z"
 COMPANY_ADDRESS = "50 Armenian Street #02-04 Wilmer Place, Singapore 179938"
 
-DB_PATH    = os.path.join(os.path.dirname(__file__), 'submissions.json')
-USERS_PATH = os.path.join(os.path.dirname(__file__), 'users.json')
+DB_PATH       = os.path.join(os.path.dirname(__file__), 'submissions.json')
+USERS_PATH    = os.path.join(os.path.dirname(__file__), 'users.json')
+DRAFTS_PATH   = os.path.join(os.path.dirname(__file__), 'drafts.json')
+SETTINGS_PATH = os.path.join(os.path.dirname(__file__), 'settings.json')
 
 os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
 
@@ -31,7 +33,6 @@ def _hash(pw: str) -> str:
 
 def _load_users():
     if not os.path.exists(USERS_PATH):
-        # seed default users on first run
         defaults = [
             {'username': 'admin',    'password': _hash('admin123'),   'role': 'admin',    'display_name': 'Admin'},
             {'username': 'xingye',   'password': _hash('pass1234'),   'role': 'employee', 'display_name': 'Xingye, Zhou'},
@@ -77,6 +78,38 @@ def _load_submissions():
 def _save_submissions(subs):
     with open(DB_PATH, 'w', encoding='utf-8') as f:
         json.dump(subs, f, indent=2, ensure_ascii=False)
+
+
+# ── Draft store ───────────────────────────────────────
+def _load_drafts():
+    if not os.path.exists(DRAFTS_PATH):
+        return []
+    with open(DRAFTS_PATH, 'r', encoding='utf-8') as f:
+        return json.load(f)
+
+def _save_drafts(drafts):
+    with open(DRAFTS_PATH, 'w', encoding='utf-8') as f:
+        json.dump(drafts, f, indent=2, ensure_ascii=False)
+
+
+# ── Settings store ────────────────────────────────────
+def _load_settings():
+    if not os.path.exists(SETTINGS_PATH):
+        return {'claim_no_next': 1}
+    with open(SETTINGS_PATH, 'r', encoding='utf-8') as f:
+        return json.load(f)
+
+def _save_settings(settings):
+    with open(SETTINGS_PATH, 'w', encoding='utf-8') as f:
+        json.dump(settings, f, indent=2)
+
+def _next_claim_no():
+    """Return next claim number and increment the counter."""
+    s = _load_settings()
+    n = s.get('claim_no_next', 1)
+    s['claim_no_next'] = n + 1
+    _save_settings(s)
+    return n
 
 
 # ── Auth routes ───────────────────────────────────────
@@ -127,10 +160,80 @@ def admin():
     return render_template('admin.html')
 
 
+@app.route('/settings')
+@login_required
+def settings_page():
+    if session.get('role') != 'admin':
+        return redirect(url_for('index'))
+    return render_template('settings.html')
+
+
 @app.route('/uploads/<path:filename>')
 @login_required
 def uploaded_file(filename):
     return send_from_directory(app.config['UPLOAD_FOLDER'], filename)
+
+
+@app.route('/api/set-print-queue', methods=['POST'])
+@login_required
+def set_print_queue():
+    data = request.get_json(force=True)
+    session['print_queue'] = data.get('files', [])
+    session['print_name']  = data.get('name', '')
+    return jsonify({'ok': True})
+
+
+@app.route('/print-receipts')
+@login_required
+def print_receipts_page():
+    files = session.get('print_queue', [])
+    name  = session.get('print_name', '')
+    return render_template('print_receipts.html', files=files, name=name)
+
+
+@app.route('/api/to-pdf/<path:filename>')
+@login_required
+def convert_to_pdf(filename):
+    """Convert a DOCX/DOC/MSG file in the uploads folder to PDF via LibreOffice."""
+    import subprocess, tempfile, shutil as _shutil
+    src_path = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+    if not os.path.exists(src_path):
+        return jsonify({'error': 'File not found'}), 404
+
+    ext = os.path.splitext(filename)[1].lower()
+    if ext == '.pdf':
+        # Already a PDF — just serve it directly
+        return send_from_directory(app.config['UPLOAD_FOLDER'], filename,
+                                   mimetype='application/pdf')
+
+    try:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            result = subprocess.run(
+                ['libreoffice', '--headless', '--convert-to', 'pdf',
+                 '--outdir', tmpdir, src_path],
+                capture_output=True, timeout=60
+            )
+            pdfs = [f for f in os.listdir(tmpdir) if f.lower().endswith('.pdf')]
+            if result.returncode != 0 or not pdfs:
+                app.logger.error('LibreOffice error: %s', result.stderr.decode())
+                return jsonify({'error': 'Conversion failed'}), 500
+
+            pdf_path = os.path.join(tmpdir, pdfs[0])
+            with open(pdf_path, 'rb') as f:
+                pdf_bytes = f.read()
+
+        from flask import make_response as _mr
+        resp = _mr(pdf_bytes)
+        resp.headers['Content-Type'] = 'application/pdf'
+        resp.headers['Content-Disposition'] = (
+            'inline; filename="' + os.path.splitext(filename)[0] + '.pdf"'
+        )
+        return resp
+    except subprocess.TimeoutExpired:
+        return jsonify({'error': 'Conversion timed out'}), 500
+    except Exception as e:
+        app.logger.error('to-pdf error: %s', e)
+        return jsonify({'error': str(e)}), 500
 
 
 @app.route('/api/upload', methods=['POST'])
@@ -169,13 +272,23 @@ def submit_claim():
     submission_id = uuid.uuid4().hex[:10]
     total = sum(float(it.get('total') or 0) for it in data.get('items', []) if it.get('total'))
 
+    # Auto-assign claim number: use provided value or fetch+increment counter
+    provided_no = str(data.get('claim_no', '')).strip()
+    if provided_no:
+        s = _load_settings()
+        if provided_no == str(s.get('claim_no_next', 1)):
+            _next_claim_no()   # consume this pre-filled number
+        claim_no = provided_no
+    else:
+        claim_no = str(_next_claim_no())
+
     record = {
         'id': submission_id,
         'submitted_at': datetime.now().isoformat(timespec='seconds'),
         'submitted_by': session['username'],
         'status': 'Pending',
         'employee_name': data.get('employee_name', ''),
-        'claim_no': data.get('claim_no', ''),
+        'claim_no': claim_no,
         'period_from': data.get('period_from', ''),
         'period_to': data.get('period_to', ''),
         'total': round(total, 2),
@@ -260,6 +373,77 @@ def update_status(sid):
     return jsonify({'ok': True})
 
 
+@app.route('/api/next-claim-no', methods=['GET'])
+@login_required
+def next_claim_no():
+    s = _load_settings()
+    return jsonify({'next': s.get('claim_no_next', 1)})
+
+
+@app.route('/api/settings', methods=['GET'])
+@admin_required
+def get_settings():
+    return jsonify(_load_settings())
+
+
+@app.route('/api/settings', methods=['PATCH'])
+@admin_required
+def update_settings():
+    data = request.get_json(force=True)
+    s = _load_settings()
+    if 'claim_no_next' in data:
+        try:
+            val = int(data['claim_no_next'])
+            if val < 1:
+                return jsonify({'error': 'Must be >= 1'}), 400
+            s['claim_no_next'] = val
+        except (ValueError, TypeError):
+            return jsonify({'error': 'Invalid number'}), 400
+    _save_settings(s)
+    return jsonify(s)
+
+
+@app.route('/api/drafts', methods=['GET'])
+@login_required
+def list_drafts():
+    drafts = _load_drafts()
+    user_drafts = [d for d in drafts if d.get('username') == session['username']]
+    user_drafts.sort(key=lambda d: d.get('updated_at', ''), reverse=True)
+    return jsonify(user_drafts)
+
+
+@app.route('/api/drafts/<did>', methods=['PUT'])
+@login_required
+def save_draft(did):
+    data = request.get_json()
+    if not data:
+        return jsonify({'error': 'No data'}), 400
+    drafts = _load_drafts()
+    rec = next((d for d in drafts if d['id'] == did), None)
+    now = datetime.now().isoformat(timespec='seconds')
+    if rec:
+        if rec.get('username') != session['username']:
+            return jsonify({'error': 'Forbidden'}), 403
+        rec.update({**data, 'id': did, 'username': session['username'], 'updated_at': now})
+    else:
+        drafts.append({**data, 'id': did, 'username': session['username'], 'updated_at': now})
+    _save_drafts(drafts)
+    return jsonify({'id': did})
+
+
+@app.route('/api/drafts/<did>', methods=['DELETE'])
+@login_required
+def delete_draft(did):
+    drafts = _load_drafts()
+    rec = next((d for d in drafts if d['id'] == did), None)
+    if not rec:
+        return jsonify({'error': 'Not found'}), 404
+    if rec.get('username') != session['username']:
+        return jsonify({'error': 'Forbidden'}), 403
+    _save_drafts([d for d in drafts if d['id'] != did])
+    return jsonify({'ok': True})
+
+
 @app.route('/api/generate-excel', methods=['POST'])
 @login_required
 def generate_excel():
@@ -292,7 +476,6 @@ def _build_workbook(data):
     ws = wb.active
     ws.title = "Claim"
 
-    # Page setup: A4 portrait, 74% scale, matching template exactly
     ws.page_setup.paperSize  = ws.PAPERSIZE_A4
     ws.page_setup.orientation = ws.ORIENTATION_PORTRAIT
     ws.page_setup.scale      = 74
@@ -304,20 +487,17 @@ def _build_workbook(data):
     ws.page_margins.footer   = 0.3
     ws.sheet_properties.pageSetUpPr.fitToPage = True
 
-    # Column widths (exact template values)
     ws.column_dimensions['A'].width = 17.58
     ws.column_dimensions['B'].width = 44.25
     ws.column_dimensions['C'].width = 25.83
     ws.column_dimensions['D'].width = 14.33
     ws.column_dimensions['E'].width = 14.33
 
-    # Fonts — Century Gothic throughout (matches template exactly)
     CG = 'Century Gothic'
     fn  = Font(name=CG, size=11)
     fb  = Font(name=CG, size=11, bold=True)
     fs  = Font(name=CG, size=8)
 
-    # Borders
     thin   = Side(style='thin')
     double = Side(style='double')
     b_all  = Border(left=thin, right=thin, top=thin, bottom=thin)
@@ -327,7 +507,6 @@ def _build_workbook(data):
 
     DATE_FMT = 'dd/mm/yyyy'
 
-    # Embed logo in rows 2-3
     logo_path = os.path.join(os.path.dirname(__file__), 'static', 'logo.jpg')
     if os.path.exists(logo_path):
         img = XLImage(logo_path)
@@ -335,18 +514,15 @@ def _build_workbook(data):
         img.height = 21
         ws.add_image(img, 'A2')
 
-    # Row heights for blank header area
     for r in range(1, 7):
         ws.row_dimensions[r].height = 18
 
-    # Row 7: CLAIM PERIOD label (D7:E7 merged)
     ws['D7'] = 'CLAIM PERIOD'
     ws['D7'].font = fb
     ws['D7'].alignment = Alignment(horizontal='center', vertical='center')
     ws.merge_cells('D7:E7')
     ws.row_dimensions[7].height = 18
 
-    # Row 8: Employee's Name / [name] / FROM / TO
     ws['A8'] = "Employee's Name:"
     ws['A8'].font = fn
     ws['A8'].alignment = Alignment(vertical='center')
@@ -362,7 +538,6 @@ def _build_workbook(data):
     ws['E8'].alignment = Alignment(horizontal='center', vertical='center')
     ws.row_dimensions[8].height = 18
 
-    # Row 9: Claim Form no. / [number] / from-date / to-date
     ws['A9'] = "Claim Form no.:"
     ws['A9'].font = fn
     ws['A9'].alignment = Alignment(vertical='center')
@@ -386,11 +561,9 @@ def _build_workbook(data):
         cell.border    = b_all
     ws.row_dimensions[9].height = 18
 
-    # Rows 10-11: blank
     ws.row_dimensions[10].height = 18
     ws.row_dimensions[11].height = 18
 
-    # Row 12: Table headers (D12:E12 merged for TOTAL)
     ws['A12'] = 'DATE'
     ws['A12'].font = fb
     ws['A12'].alignment = Alignment(horizontal='center', vertical='center')
@@ -414,7 +587,6 @@ def _build_workbook(data):
     ws.merge_cells('D12:E12')
     ws.row_dimensions[12].height = 18
 
-    # Data rows 13-27 (always 15 rows, matching template)
     items = data.get('items', [])
     for i in range(15):
         row  = 13 + i
@@ -426,7 +598,6 @@ def _build_workbook(data):
         gst      = item.get('gst', '')
         total    = item.get('total', '')
 
-        # A: date
         if date_val:
             try:
                 ws[f'A{row}'] = datetime.strptime(date_val, '%Y-%m-%d')
@@ -437,13 +608,11 @@ def _build_workbook(data):
         ws[f'A{row}'].alignment = Alignment(horizontal='center', vertical='center')
         ws[f'A{row}'].border = b_all
 
-        # B: description
         ws[f'B{row}'] = desc
         ws[f'B{row}'].font = fn
         ws[f'B{row}'].alignment = Alignment(vertical='center', wrap_text=True)
         ws[f'B{row}'].border = b_all
 
-        # C: GST
         if gst not in ('', None):
             try:
                 ws[f'C{row}'] = float(gst)
@@ -454,7 +623,6 @@ def _build_workbook(data):
         ws[f'C{row}'].alignment = Alignment(horizontal='right', vertical='center')
         ws[f'C{row}'].border = b_all
 
-        # D:E merged: total
         if total not in ('', None):
             try:
                 ws[f'D{row}'] = float(total)
@@ -466,7 +634,6 @@ def _build_workbook(data):
         ws[f'D{row}'].border = b_all
         ws.merge_cells(f'D{row}:E{row}')
 
-    # Row 28: Total Reimbursement (D28:E28 merged, SUM formula)
     ws.row_dimensions[28].height = 20.15
     ws['C28'] = 'Total Reimbursement'
     ws['C28'].font = fb
@@ -480,11 +647,9 @@ def _build_workbook(data):
     ws['D28'].border = b_td
     ws.merge_cells('D28:E28')
 
-    # Rows 29-37: blank spacers
     for r in range(29, 38):
         ws.row_dimensions[r].height = 18
 
-    # Row 38: Signature line
     ws.row_dimensions[38].height = 18
     for col, label in [('A', 'Received by'), ('B', 'Date'), ('C', 'Approved by'), ('D', 'Date')]:
         ws[f'{col}38'] = label
@@ -492,18 +657,15 @@ def _build_workbook(data):
         ws[f'{col}38'].alignment = Alignment(horizontal='center' if col != 'A' else 'left', vertical='center')
         ws[f'{col}38'].border = b_t
 
-    # Rows 39-41: blank
     for r in range(39, 42):
         ws.row_dimensions[r].height = 18
 
-    # Row 42: Note label (C42:E42 merged)
     ws.row_dimensions[42].height = 18
     ws['C42'] = 'Note:'
     ws['C42'].font = fb
     ws['C42'].alignment = Alignment(vertical='center')
     ws.merge_cells('C42:E42')
 
-    # Rows 43-46: Note content (C43:E46 merged)
     note_text = data.get('notes', '')
     if note_text:
         ws['C43'] = note_text
@@ -511,11 +673,9 @@ def _build_workbook(data):
         ws['C43'].alignment = Alignment(wrap_text=True, vertical='top')
     ws.merge_cells('C43:E46')
 
-    # Rows 47-53: blank
     for r in range(47, 54):
         ws.row_dimensions[r].height = 18
 
-    # Rows 54-56: Company footer (each row A:E merged)
     ws.row_dimensions[54].height = 18
     ws['A54'] = COMPANY_NAME
     ws['A54'].font = fb
@@ -534,7 +694,6 @@ def _build_workbook(data):
     ws['A56'].alignment = Alignment(vertical='center')
     ws.merge_cells('A56:E56')
 
-    # Attachments sheet
     attachments = data.get('attachments', [])
     if attachments:
         ws2 = wb.create_sheet("Attachments")
