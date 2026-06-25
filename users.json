@@ -28,5 +28,41 @@
     "password": "bd94dcda26fccb4e68d6a31f9b5aac0b571ae266d822620e901ef7ebe3a11d4f",
     "role": "employee",
     "display_name": "Mary"
+  },
+  {
+    "username": "chuiwhei",
+    "password": "bd94dcda26fccb4e68d6a31f9b5aac0b571ae266d822620e901ef7ebe3a11d4f",
+    "role": "employee",
+    "display_name": "Chui Whei"
+  },
+  {
+    "username": "egan",
+    "password": "bd94dcda26fccb4e68d6a31f9b5aac0b571ae266d822620e901ef7ebe3a11d4f",
+    "role": "employee",
+    "display_name": "Egan"
+  },
+  {
+    "username": "edward",
+    "password": "bd94dcda26fccb4e68d6a31f9b5aac0b571ae266d822620e901ef7ebe3a11d4f",
+    "role": "employee",
+    "display_name": "Edward"
+  },
+  {
+    "username": "thomas",
+    "password": "bd94dcda26fccb4e68d6a31f9b5aac0b571ae266d822620e901ef7ebe3a11d4f",
+    "role": "employee",
+    "display_name": "Thomas"
+  },
+  {
+    "username": "yongchuan",
+    "password": "bd94dcda26fccb4e68d6a31f9b5aac0b571ae266d822620e901ef7ebe3a11d4f",
+    "role": "employee",
+    "display_name": "Yong Chuan"
+  },
+  {
+    "username": "gabriel",
+    "password": "bd94dcda26fccb4e68d6a31f9b5aac0b571ae266d822620e901ef7ebe3a11d4f",
+    "role": "employee",
+    "display_name": "Gabriel"
   }
 ]

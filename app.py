@@ -13,7 +13,7 @@ from openpyxl.utils import get_column_letter
 app = Flask(__name__)
 app.secret_key = os.environ.get('SECRET_KEY', 'ternary-claim-secret-2026-change-in-prod')
 app.config['UPLOAD_FOLDER'] = os.path.join(os.path.dirname(__file__), 'uploads')
-app.config['MAX_CONTENT_LENGTH'] = 50 * 1024 * 1024  # 50 MB
+app.config['MAX_CONTENT_LENGTH'] = 100 * 1024 * 1024  # 100 MB
 
 COMPANY_NAME = "Ternary Fund Management Pte Ltd"
 COMPANY_UEN = "UEN: 201902851Z"
@@ -39,6 +39,12 @@ def _load_users():
             {'username': 'peter',    'password': _hash('pass1234'),   'role': 'employee', 'display_name': 'Peter Tan'},
             {'username': 'jason',    'password': _hash('pass1234'),   'role': 'employee', 'display_name': 'Jason Chan'},
             {'username': 'mary',     'password': _hash('pass1234'),   'role': 'employee', 'display_name': 'Mary'},
+            {'username': 'chuiwhei', 'password': _hash('pass1234'),   'role': 'employee', 'display_name': 'Chui Whei'},
+            {'username': 'egan',     'password': _hash('pass1234'),   'role': 'employee', 'display_name': 'Egan'},
+            {'username': 'edward',   'password': _hash('pass1234'),   'role': 'employee', 'display_name': 'Edward'},
+            {'username': 'thomas',   'password': _hash('pass1234'),   'role': 'employee', 'display_name': 'Thomas'},
+            {'username': 'yongchuan','password': _hash('pass1234'),   'role': 'employee', 'display_name': 'Yong Chuan'},
+            {'username': 'gabriel',  'password': _hash('pass1234'),   'role': 'employee', 'display_name': 'Gabriel'},
         ]
         with open(USERS_PATH, 'w', encoding='utf-8') as f:
             json.dump(defaults, f, indent=2)
@@ -256,7 +262,15 @@ def _convert_to_pdf_win32(src_path, dest_pdf_path):
             return True
         finally:
             if word:
-                word.Quit()
+                try:
+                    word.Quit()
+                except Exception:
+                    pass
+            if outlook:
+                try:
+                    outlook.Quit()
+                except Exception:
+                    pass
     return False
 
 
