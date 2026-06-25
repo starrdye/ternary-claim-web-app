@@ -214,6 +214,7 @@ body {
   width: 100%;
   border-collapse: collapse;
   margin-bottom: 0;
+  table-layout: fixed;
 }
 .claim-table th {
   background: var(--slate);
@@ -238,7 +239,7 @@ body {
 .th-desc  { }             /* flex */
 .th-gst   { width: 22%; }
 .th-total { width: 24%; }
-.th-docs  { width: 44px; }
+.th-docs  { width: 54px; }
 .th-del   { width: 0; padding: 0 !important; border-color: transparent !important; background: transparent !important; }
 
 /* Body cells */
@@ -283,11 +284,9 @@ body {
 /* The last two columns (docs / delete) have no Excel border */
 .claim-table tbody td.td-docs {
   border-color: transparent;
-  background: transparent !important;
 }
 .claim-table tbody td.td-del {
   border-color: transparent !important;
-  background: transparent !important;
 }
 
 /* Inline cell inputs */
@@ -315,7 +314,7 @@ body {
 .cell-in[type="number"] { text-align: right; }
 
 /* Docs attach button */
-.td-docs { text-align: center; padding: 3px 4px !important; overflow: visible; }
+.td-docs { text-align: center; padding: 3px 4px !important; overflow: visible; width: 54px; }
 .docs-btn {
   background: none;
   border: 1px solid var(--border-l);
