@@ -7,3 +7,11 @@ __pycache__/
 dist/
 .venv/
 venv/
+
+# Local databases and state files
+submissions.json
+drafts.json
+settings.json
+
+# Local automation scripts
+*.bat
