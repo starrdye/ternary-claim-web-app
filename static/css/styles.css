@@ -284,6 +284,7 @@ body {
 /* The last two columns (docs / delete) have no Excel border */
 .claim-table tbody td.td-docs {
   border-color: transparent;
+  border-right: 1px solid var(--border);
 }
 .claim-table tbody td.td-del {
   border-color: transparent !important;
