@@ -34,7 +34,7 @@ def _hash(pw: str) -> str:
 def _load_users():
     if not os.path.exists(USERS_PATH):
         defaults = [
-            {'username': 'admin',    'password': _hash('admin123'),   'role': 'admin',    'display_name': 'Admin'},
+            {'username': 'admin',    'password': _hash('TerClaim16!'),   'role': 'admin',    'display_name': 'Admin'},
             {'username': 'xingye',   'password': _hash('pass1234'),   'role': 'employee', 'display_name': 'Xingye, Zhou'},
             {'username': 'peter',    'password': _hash('pass1234'),   'role': 'employee', 'display_name': 'Peter Tan'},
             {'username': 'jason',    'password': _hash('pass1234'),   'role': 'employee', 'display_name': 'Jason Chan'},
