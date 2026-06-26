@@ -64,5 +64,11 @@
     "password": "303ef03c7d48380e69e60df18b0f8e1645416eddec1cc7071d330032ed2562fe",
     "role": "employee",
     "display_name": "Gabriel"
+  },
+  {
+    "username": "hannah",
+    "password": "b117c63a6565e0310369829b644e4a33659f0265208225b6a7b139a75dfb7be6",
+    "role": "employee",
+    "display_name": "Hannah"
   }
 ]

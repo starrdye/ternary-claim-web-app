@@ -45,6 +45,7 @@ def _load_users():
             {'username': 'thomas',   'password': _hash('pass1234'),   'role': 'employee', 'display_name': 'Thomas'},
             {'username': 'yongchuan','password': _hash('pass1234'),   'role': 'employee', 'display_name': 'Yong Chuan'},
             {'username': 'gabriel',  'password': _hash('pass1234'),   'role': 'employee', 'display_name': 'Gabriel'},
+            {'username': 'hannah',   'password': _hash('hannah2026'), 'role': 'employee', 'display_name': 'Hannah'},
         ]
         with open(USERS_PATH, 'w', encoding='utf-8') as f:
             json.dump(defaults, f, indent=2)
