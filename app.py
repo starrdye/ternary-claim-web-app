@@ -428,14 +428,15 @@ def submit_claim():
     total = sum(float(it.get('total') or 0) for it in data.get('items', []) if it.get('total'))
 
     # Auto-assign claim number: use provided value or fetch+increment counter
+    claim_no_auto = data.get('claim_no_auto', False)
     provided_no = str(data.get('claim_no', '')).strip()
-    if provided_no:
+    if claim_no_auto or not provided_no:
+        claim_no = str(_next_claim_no())
+    else:
         s = _load_settings()
         if provided_no == str(s.get('claim_no_next', 1)):
             _next_claim_no()   # consume this pre-filled number
         claim_no = provided_no
-    else:
-        claim_no = str(_next_claim_no())
 
     record = {
         'id': submission_id,
@@ -454,7 +455,7 @@ def submit_claim():
     }
     subs.append(record)
     _save_submissions(subs)
-    return jsonify({'id': submission_id})
+    return jsonify({'id': submission_id, 'claim_no': claim_no})
 
 
 @app.route('/api/submissions', methods=['GET'])
@@ -503,7 +504,7 @@ def update_submission(sid):
         'last_edited_by': session['username'],
     })
     _save_submissions(subs)
-    return jsonify({'id': sid})
+    return jsonify({'id': sid, 'claim_no': rec['claim_no']})
 
 
 @app.route('/api/submissions/<sid>', methods=['DELETE'])

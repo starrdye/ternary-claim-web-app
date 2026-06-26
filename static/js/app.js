@@ -7,6 +7,8 @@ let editId = null;         // set when admin is editing an existing submission
 let histSubs = {};         // id → submission, populated when history drawer opens
 let histDrafts = [];       // drafts array, populated when history drawer opens
 
+let claimNoAuto = true;
+
 /* ── Draft state ────────────────────────────────────── */
 let currentDraftId = null;
 let draftSaveTimer = null;
@@ -48,7 +50,13 @@ document.addEventListener('DOMContentLoaded', async () => {
   ['employee_name', 'claim_no', 'notes', 'currency'].forEach(id => {
     const el = document.getElementById(id);
     if (!el) return;
-    el.addEventListener('input', () => { renderPreview(); scheduleDraftSave(); });
+    el.addEventListener('input', () => {
+      if (id === 'claim_no') {
+        claimNoAuto = (el.value.trim() === '');
+      }
+      renderPreview();
+      scheduleDraftSave();
+    });
   });
 
   // Save draft on page unload (best-effort)
@@ -227,6 +235,7 @@ async function openDraftFromHistory(did) {
 
 /* ── Shared form-fill (used by both draft restore and admin edit) ── */
 function fillFormData(data) {
+  claimNoAuto = !editId && (data.claim_no_auto !== false);
   document.getElementById('employee_name').value = data.employee_name || '';
   document.getElementById('claim_no').value       = data.claim_no      || '';
   document.getElementById('currency').value       = data.currency      || 'SGD';
@@ -518,7 +527,7 @@ async function submitClaim() {
   try {
     const res = await fetch(url, { method, headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload) });
     if (!res.ok) throw new Error();
-    const { id } = await res.json();
+    const { id, claim_no } = await res.json();
     const isEdit = !!editId;
 
     // Delete the draft on successful submit (fire and forget)
@@ -531,7 +540,7 @@ async function submitClaim() {
       <div style="text-align:center;padding:64px 20px">
         <div style="font-size:48px;margin-bottom:16px">${isEdit ? '✏️' : '✅'}</div>
         <div style="font-size:20px;font-weight:700;color:var(--slate);margin-bottom:8px">${isEdit ? 'Changes Saved' : 'Claim Submitted'}</div>
-        <div style="font-size:13px;color:var(--muted);margin-bottom:6px">Reference: <strong style="color:var(--text)">${id}</strong></div>
+        <div style="font-size:13px;color:var(--muted);margin-bottom:6px">Claim Number: <strong style="color:var(--text)">#${claim_no || ''}</strong> &nbsp;·&nbsp; Reference: <strong style="color:var(--text)">${id}</strong></div>
         <div style="font-size:13px;color:var(--muted);margin-bottom:28px">${isEdit ? 'The claim has been updated.' : 'Finance will review and update the status.'}</div>
         <div style="display:flex;gap:12px;justify-content:center">
           <a href="/" style="background:var(--slate);color:#fff;padding:10px 22px;border-radius:3px;text-decoration:none;font-weight:700;font-size:13px">New Claim</a>
@@ -561,6 +570,7 @@ function buildPayload() {
   return {
     employee_name: v('employee_name'),
     claim_no:      v('claim_no'),
+    claim_no_auto: !editId && claimNoAuto,
     period_from:   v('period_from') || document.getElementById('period_from').value,
     period_to:     v('period_to')   || document.getElementById('period_to').value,
     notes:         v('notes'),
