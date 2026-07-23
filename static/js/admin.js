@@ -4,6 +4,7 @@ let filtered = [];
 let sortCol = 'submitted_at';
 let sortAsc = false;
 let activeId = null;
+let showArchived = false;
 
 /* ── Init ──────────────────────────────────────────── */
 document.addEventListener('DOMContentLoaded', async () => {
@@ -25,17 +26,11 @@ async function loadSubmissions() {
 
 /* ── Summary ───────────────────────────────────────── */
 function renderSummary() {
-  const total    = allSubmissions.length;
-  const pending  = allSubmissions.filter(s => s.status === 'Pending').length;
-  const approved = allSubmissions.filter(s => s.status === 'Approved').length;
-  const rejected = allSubmissions.filter(s => s.status === 'Rejected').length;
-  const amount   = allSubmissions.filter(s => s.status === 'Approved').reduce((a, s) => a + (s.total || 0), 0);
-
-  setText('s-total',    total,    '.sc-num');
-  setText('s-pending',  pending,  '.sc-num');
-  setText('s-approved', approved, '.sc-num');
-  setText('s-rejected', rejected, '.sc-num');
-  document.querySelector('#s-amount .sc-num').textContent = amount.toLocaleString('en-SG', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const active = allSubmissions.filter(s => !s.archived);
+  setText('s-total',    active.length,                                        '.sc-num');
+  setText('s-pending',  active.filter(s => s.status === 'Pending').length,   '.sc-num');
+  setText('s-approved', active.filter(s => s.status === 'Approved').length,  '.sc-num');
+  setText('s-rejected', active.filter(s => s.status === 'Rejected').length,  '.sc-num');
 }
 
 function setText(id, val, sel) {
@@ -48,9 +43,10 @@ function applyFilters() {
   const status = document.getElementById('filter-status').value;
 
   filtered = allSubmissions.filter(s => {
-    const matchQ = !q || s.employee_name.toLowerCase().includes(q) || (s.claim_no||'').toLowerCase().includes(q);
-    const matchS = !status || s.status === status;
-    return matchQ && matchS;
+    const matchQ    = !q || s.employee_name.toLowerCase().includes(q) || (s.claim_no||'').toLowerCase().includes(q);
+    const matchS    = !status || s.status === status;
+    const matchArch = showArchived === !!s.archived;
+    return matchQ && matchS && matchArch;
   });
 
   sortFiltered();
@@ -95,7 +91,9 @@ function renderTable() {
     const docs  = (s.attachments || []).length;
     const items = (s.items || []).filter(i => i.description || i.total).length;
     const period = formatPeriod(s.period_from, s.period_to);
-    return `<tr data-id="${s.id}" onclick="openDrawer('${s.id}')">
+    const archClass  = s.archived ? ' row-archived' : '';
+    const archBadge  = s.archived ? `<span class="badge badge-Archived" style="margin-left:4px">Archived</span>` : '';
+    return `<tr data-id="${s.id}" class="${archClass.trim()}" onclick="openDrawer('${s.id}')">
       <td class="td-mono">${fmtDateTime(s.submitted_at)}</td>
       <td><strong>${esc(s.employee_name)}</strong></td>
       <td class="td-mono">${esc(s.claim_no || '—')}</td>
@@ -103,7 +101,7 @@ function renderTable() {
       <td class="td-num">${(s.total || 0).toLocaleString('en-SG', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
       <td class="td-items">${items}</td>
       <td class="td-docs">${docs > 0 ? `📎 ${docs}` : '—'}</td>
-      <td><span class="badge badge-${s.status}">${s.status}</span></td>
+      <td><span class="badge badge-${s.status}">${s.status}</span>${archBadge}</td>
       <td><button class="row-view-btn" onclick="event.stopPropagation();openDrawer('${s.id}')">View →</button></td>
     </tr>`;
   }).join('');
@@ -128,6 +126,9 @@ async function openDrawer(id) {
   const editLink = document.getElementById('edit-claim-link');
   if (editLink) editLink.href = `/?edit=${id}`;
   renderDrawer(s);
+
+  const archBtn = document.getElementById('archive-btn');
+  if (archBtn) _updateArchBtn(archBtn, s.archived);
 }
 
 function closeDrawer() {
@@ -530,6 +531,38 @@ async function downloadExcel() {
   a.download = res.headers.get('Content-Disposition')?.match(/filename="(.+)"/)?.[1] || 'claim.xlsx';
   a.click();
   URL.revokeObjectURL(url);
+}
+
+/* ── Archive ───────────────────────────────────────── */
+function toggleShowArchived() {
+  showArchived = !showArchived;
+  document.getElementById('archived-toggle').classList.toggle('active', showArchived);
+  applyFilters();
+}
+
+const _ARCH_SVG = `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M21 8v13H3V8"/><path d="M23 3H1v5h22V3z"/><line x1="10" y1="12" x2="14" y2="12"/></svg>`;
+
+function _updateArchBtn(btn, archived) {
+  if (archived) {
+    btn.className = 'dl-btn dl-btn-unarchive';
+    btn.innerHTML = _ARCH_SVG + ' Unarchive';
+  } else {
+    btn.className = 'dl-btn dl-btn-archive';
+    btn.innerHTML = _ARCH_SVG + ' Archive';
+  }
+}
+
+async function setArchived() {
+  if (!activeId) return;
+  const res = await fetch(`/api/submissions/${activeId}/archive`, { method: 'PATCH' });
+  if (!res.ok) { showToast('Failed to update archive status'); return; }
+  const data = await res.json();
+  const s = allSubmissions.find(x => x.id === activeId);
+  if (s) s.archived = data.archived;
+  renderSummary();
+  applyFilters();
+  showToast(data.archived ? 'Submission archived' : 'Submission unarchived');
+  closeDrawer();
 }
 
 /* ── Toast ─────────────────────────────────────────── */

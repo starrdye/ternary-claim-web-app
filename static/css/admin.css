@@ -333,6 +333,42 @@
   border-color: #a8c4f0;
 }
 .dl-btn-edit:hover { background: #1a56a4; color: #fff; border-color: #1a56a4; }
+.dl-btn-archive {
+  background: #f4f6f8;
+  color: #6c757d;
+  border-color: #ced4da;
+}
+.dl-btn-archive:hover { background: #6c757d; color: #fff; border-color: #6c757d; }
+.dl-btn-unarchive {
+  background: #fff3cd;
+  color: #856404;
+  border-color: #ffc107;
+}
+.dl-btn-unarchive:hover { background: #856404; color: #fff; border-color: #856404; }
+
+/* Archived toggle button in filter bar */
+.archived-toggle {
+  display: inline-flex; align-items: center; gap: 6px;
+  background: transparent;
+  border: 1px solid var(--border-l);
+  border-radius: 4px;
+  padding: 7px 12px;
+  font-family: var(--font);
+  font-size: 13px;
+  color: var(--muted);
+  cursor: pointer;
+  transition: all 0.12s;
+  white-space: nowrap;
+}
+.archived-toggle:hover { border-color: var(--slate); color: var(--text); }
+.archived-toggle.active { background: var(--slate); color: #fff; border-color: var(--slate); }
+
+/* Archived rows in table */
+.admin-table tbody tr.row-archived td { opacity: 0.55; font-style: italic; }
+.admin-table tbody tr.row-archived:hover td { opacity: 0.85; }
+
+/* Archived badge */
+.badge-Archived { background: #e9ecef; color: #6c757d; border: 1px solid #ced4da; }
 
 /* ── Topbar additions ──────────────────────────────── */
 .tb-link {

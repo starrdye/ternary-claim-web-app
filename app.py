@@ -541,6 +541,18 @@ def list_users():
     return jsonify([{'username': u['username'], 'display_name': u['display_name']} for u in users])
 
 
+@app.route('/api/submissions/<sid>/archive', methods=['PATCH'])
+@admin_required
+def archive_submission(sid):
+    subs = _load_submissions()
+    rec = next((s for s in subs if s['id'] == sid), None)
+    if not rec:
+        return jsonify({'error': 'Not found'}), 404
+    rec['archived'] = not rec.get('archived', False)
+    _save_submissions(subs)
+    return jsonify({'archived': rec['archived']})
+
+
 @app.route('/api/submissions/<sid>/status', methods=['PATCH'])
 @admin_required
 def update_status(sid):
