@@ -334,11 +334,11 @@
 }
 .dl-btn-edit:hover { background: #1a56a4; color: #fff; border-color: #1a56a4; }
 .dl-btn-archive {
-  background: #f4f6f8;
-  color: #6c757d;
-  border-color: #ced4da;
+  background: #f0f4f9;
+  color: var(--slate);
+  border-color: var(--border-l);
 }
-.dl-btn-archive:hover { background: #6c757d; color: #fff; border-color: #6c757d; }
+.dl-btn-archive:hover { background: var(--slate); color: #fff; border-color: var(--slate); }
 .dl-btn-unarchive {
   background: #fff3cd;
   color: #856404;
