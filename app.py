@@ -17,7 +17,7 @@ app.config['MAX_CONTENT_LENGTH'] = 100 * 1024 * 1024  # 100 MB
 
 COMPANY_NAME = "Ternary Fund Management Pte Ltd"
 COMPANY_UEN = "UEN: 201902851Z"
-COMPANY_ADDRESS = "50 Armenian Street #02-04 Wilmer Place, Singapore 179938"
+COMPANY_ADDRESS = "6 Temasek Boulevard, #09-03A/04, #4 Suntec Tower, Singapore 038986"
 
 DB_PATH       = os.path.join(os.path.dirname(__file__), 'submissions.json')
 USERS_PATH    = os.path.join(os.path.dirname(__file__), 'users.json')

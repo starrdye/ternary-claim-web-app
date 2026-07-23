@@ -327,7 +327,7 @@ th.c{text-align:center} th.r{text-align:right}
 ${s.notes ? `<p style="margin-bottom:8px"><strong>Note:</strong> ${esc(s.notes)}</p>` : ''}
 <div class="footer">
   <strong>Ternary Fund Management Pte Ltd</strong> &nbsp;·&nbsp; UEN: 201902851Z<br>
-  50 Armenian Street #02-04 Wilmer Place, Singapore 179938 &nbsp;·&nbsp; +65 6970 6272 &nbsp;·&nbsp; admin@ternaryfmc.com
+  6 Temasek Boulevard, #09-03A/04, #4 Suntec Tower, Singapore 038986 &nbsp;·&nbsp; +65 6970 6272 &nbsp;·&nbsp; admin@ternaryfmc.com
 </div>
 <script>window.onload=function(){window.print();}<\/script>
 </body></html>`);

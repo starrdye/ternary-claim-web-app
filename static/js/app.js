@@ -508,7 +508,7 @@ function renderPreview() {
     </div>
     <div class="prev-footer">
       Ternary Fund Management Pte Ltd &nbsp;·&nbsp; UEN: 201902851Z<br>
-      50 Armenian Street #02-04 Wilmer Place, Singapore 179938<br>
+      6 Temasek Boulevard, #09-03A/04, #4 Suntec Tower, Singapore 038986<br>
       +65 6970 6272 &nbsp;·&nbsp; admin@ternaryfmc.com &nbsp;·&nbsp; www.ternaryfmc.com
     </div>
   </div>`;

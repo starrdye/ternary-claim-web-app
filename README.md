@@ -122,5 +122,5 @@ To ensure seamless document viewing and printing without browser layout issues:
 
 - **Ternary Fund Management Pte Ltd**
 - UEN: 201902851Z
-- 50 Armenian Street #02-04 Wilmer Place, Singapore 179938
+- 6 Temasek Boulevard, #09-03A/04, #4 Suntec Tower, Singapore 038986
 - +65 6970 6272 · admin@ternaryfmc.com · www.ternaryfmc.com
