@@ -288,7 +288,9 @@ async function loadEditMode(sid) {
 
   const banner = document.createElement('div');
   banner.style.cssText = 'background:#fff3cd;color:#856404;font-size:12px;font-weight:600;padding:6px 18px;text-align:center;border-bottom:1px solid #ffc107';
-  banner.innerHTML = `Editing submission <strong>${sid}</strong> — <a href="/admin" style="color:#856404">Back to Admin</a>`;
+  const backHref  = currentUser?.role === 'admin' ? '/admin' : '/';
+  const backLabel = currentUser?.role === 'admin' ? 'Back to Admin' : 'Cancel Edit';
+  banner.innerHTML = `Editing submission <strong>${sid}</strong> — <a href="${backHref}" style="color:#856404">${backLabel}</a>`;
   document.querySelector('.topbar').after(banner);
 }
 
@@ -867,13 +869,18 @@ function histCard(s) {
 
   const noteHtml = s.notes ? `<div class="hci-note"><strong>Note:</strong> ${esc(s.notes)}</div>` : '';
 
-  const actionsHtml = (s.status === 'Pending' || !s.status)
-    ? `<div class="hc-actions" onclick="event.stopPropagation()">
-        <button class="hc-btn hc-trash" onclick="deleteSubmission('${s.id}', event)" title="Delete claim">
-          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4h6v2"/></svg>
-          Delete
-        </button>
-      </div>`
+  const editBtn = s.status !== 'Approved'
+    ? `<button class="hc-btn hc-edit" onclick="location.href='/?edit=${s.id}'" title="Edit claim">
+        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+        Edit
+      </button>` : '';
+  const deleteBtn = (s.status === 'Pending' || !s.status)
+    ? `<button class="hc-btn hc-trash" onclick="deleteSubmission('${s.id}', event)" title="Delete claim">
+        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4h6v2"/></svg>
+        Delete
+      </button>` : '';
+  const actionsHtml = (editBtn || deleteBtn)
+    ? `<div class="hc-actions" onclick="event.stopPropagation()">${editBtn}${deleteBtn}</div>`
     : '';
 
   return `<div class="hc">

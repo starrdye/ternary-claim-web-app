@@ -480,7 +480,7 @@ def get_submission(sid):
 
 
 @app.route('/api/submissions/<sid>', methods=['PUT'])
-@admin_required
+@login_required
 def update_submission(sid):
     data = request.get_json()
     if not data:
@@ -489,6 +489,13 @@ def update_submission(sid):
     rec = next((s for s in subs if s['id'] == sid), None)
     if not rec:
         return jsonify({'error': 'Not found'}), 404
+    is_admin = session.get('role') == 'admin'
+    is_owner = rec.get('submitted_by') == session['username']
+    if not is_admin:
+        if not is_owner:
+            return jsonify({'error': 'Forbidden'}), 403
+        if rec.get('status') == 'Approved':
+            return jsonify({'error': 'Cannot edit an approved claim'}), 403
     total = sum(float(it.get('total') or 0) for it in data.get('items', []) if it.get('total'))
     rec.update({
         'employee_name': data.get('employee_name', rec['employee_name']),

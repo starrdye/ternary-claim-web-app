@@ -743,6 +743,8 @@ tr:hover .del-btn {
 .hc-btn:hover      { background: var(--slate); color: #fff; }
 .hc-btn.hc-dl      { background: #e8f5e9; color: #1b5e20; border-color: #a5d6a7; }
 .hc-btn.hc-dl:hover{ background: #2e7d32; color: #fff; border-color: #2e7d32; }
+.hc-btn.hc-edit      { background: #e8f0fe; color: #1a56a4; border-color: #a8c4f0; }
+.hc-btn.hc-edit:hover{ background: #1a56a4; color: #fff; border-color: #1a56a4; }
 
 .hc-chev { font-size: 16px; color: #bbb; align-self: center; flex-shrink: 0; transition: transform 0.2s; }
 .hc-chev.open { transform: rotate(90deg); }
