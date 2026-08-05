@@ -107,6 +107,78 @@
       font-size: 13px;
       color: var(--muted);
     }
+    /* User table */
+    .user-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 13px;
+    }
+    .user-table th {
+      background: var(--slate);
+      color: #fff;
+      padding: 8px 12px;
+      text-align: left;
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      white-space: nowrap;
+    }
+    .user-table td {
+      padding: 8px 10px;
+      border-bottom: 1px solid var(--border-l);
+      vertical-align: middle;
+    }
+    .user-table tbody tr:last-child td { border-bottom: none; }
+    .user-mono { font-size: 12px; color: var(--muted); font-family: monospace; }
+    .user-role-badge {
+      display: inline-block;
+      padding: 2px 8px;
+      border-radius: 10px;
+      font-size: 10px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+    .user-role-admin    { background: #e8f0fe; color: #1a56a4; border: 1px solid #a8c4f0; }
+    .user-role-employee { background: #f4f6f9; color: var(--muted); border: 1px solid var(--border-l); }
+    .user-input {
+      border: 1px solid var(--border-l);
+      border-radius: 4px;
+      padding: 5px 9px;
+      font-family: var(--font);
+      font-size: 13px;
+      color: var(--text);
+      width: 100%;
+      min-width: 130px;
+      outline: none;
+      transition: border-color 0.12s;
+    }
+    .user-input:focus { border-color: var(--slate); }
+    .user-pw-input { min-width: 110px; }
+    .user-save-btn {
+      background: var(--slate);
+      color: #fff;
+      border: none;
+      border-radius: 4px;
+      padding: 5px 14px;
+      font-family: var(--font);
+      font-size: 12px;
+      font-weight: 700;
+      cursor: pointer;
+      white-space: nowrap;
+      transition: background 0.12s;
+    }
+    .user-save-btn:hover  { background: var(--slate2); }
+    .user-save-btn:disabled { opacity: 0.5; cursor: default; }
+    .user-row-toast {
+      display: none;
+      font-size: 11px;
+      font-weight: 700;
+      color: #155724;
+      margin-left: 6px;
+    }
+    .user-row-toast.show { display: inline; }
     @media (max-width: 576px) {
       .settings-wrap {
         margin: 20px auto;
@@ -155,6 +227,31 @@
       <div class="page-header-sub">Admin configuration for claim processing</div>
     </div>
 
+    <!-- User Management -->
+    <div class="settings-card">
+      <div class="settings-card-title">User Management</div>
+      <div class="settings-card-desc">
+        Update employee display names and reset passwords. Login usernames are fixed and cannot be changed.
+        Leave the password field blank to keep the current password.
+      </div>
+      <div id="user-table-wrap">
+        <table class="user-table" id="user-table">
+          <thead>
+            <tr>
+              <th>Login Username</th>
+              <th>Role</th>
+              <th>Display Name</th>
+              <th>New Password</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody id="user-tbody">
+            <tr><td colspan="5" style="text-align:center;color:var(--muted);padding:20px">Loading…</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
     <!-- Claim Number Settings -->
     <div class="settings-card">
       <div class="settings-card-title">Claim Form Numbering</div>
@@ -182,6 +279,62 @@
   // Load current user
   fetch('/api/me').then(r => r.json()).then(u => {
     document.getElementById('tb-user-settings').textContent = u.display_name;
+  });
+
+  // ── User management ──────────────────────────────────
+  async function loadUsers() {
+    const res = await fetch('/api/users');
+    if (!res.ok) return;
+    const users = await res.json();
+    const tbody = document.getElementById('user-tbody');
+    tbody.innerHTML = users.map((u, i) => `
+      <tr id="user-row-${u.username}">
+        <td class="user-mono">${u.username}</td>
+        <td><span class="user-role-badge user-role-${u.role}">${u.role}</span></td>
+        <td><input class="user-input" id="dn-${u.username}" type="text" value="${escHtml(u.display_name)}" placeholder="Display name" /></td>
+        <td><input class="user-input user-pw-input" id="pw-${u.username}" type="password" placeholder="Leave blank to keep" autocomplete="new-password" /></td>
+        <td style="white-space:nowrap">
+          <button class="user-save-btn" onclick="saveUser('${u.username}')">Save</button>
+          <span class="user-row-toast" id="toast-${u.username}">✓ Saved</span>
+        </td>
+      </tr>`).join('');
+  }
+  loadUsers();
+
+  function escHtml(s) {
+    return String(s||'').replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  }
+
+  async function saveUser(username) {
+    const dn  = document.getElementById(`dn-${username}`).value.trim();
+    const pw  = document.getElementById(`pw-${username}`).value;
+    const btn = document.querySelector(`#user-row-${username} .user-save-btn`);
+    if (!dn) { alert('Display name cannot be empty.'); return; }
+    btn.disabled = true;
+    const body = { display_name: dn };
+    if (pw) body.password = pw;
+    const res = await fetch(`/api/users/${username}`, {
+      method:  'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body:    JSON.stringify(body),
+    });
+    btn.disabled = false;
+    if (!res.ok) { alert('Failed to save user.'); return; }
+    document.getElementById(`pw-${username}`).value = '';
+    const toast = document.getElementById(`toast-${username}`);
+    toast.classList.add('show');
+    setTimeout(() => toast.classList.remove('show'), 2500);
+  }
+
+  // Allow Enter key to save in user rows
+  document.getElementById('user-tbody').addEventListener('keydown', e => {
+    if (e.key === 'Enter') {
+      const row = e.target.closest('tr');
+      if (row) {
+        const username = row.id.replace('user-row-', '');
+        saveUser(username);
+      }
+    }
   });
 
   // Load current settings

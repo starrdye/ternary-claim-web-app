@@ -86,9 +86,25 @@ async function loadEmployeeAutocomplete() {
   try {
     const res   = await fetch('/api/users');
     const users = await res.json();
-    const dl    = document.getElementById('employee-list');
-    if (!dl) return;
-    dl.innerHTML = users.map(u => `<option value="${esc(u.display_name)}">`).join('');
+
+    // Replace text input with a <select> for admin
+    const inp = document.getElementById('employee_name');
+    if (!inp) return;
+    const sel = document.createElement('select');
+    sel.id        = 'employee_name';
+    sel.className = inp.className;
+    sel.innerHTML = `<option value="">— Select employee —</option>`
+      + users.map(u => `<option value="${esc(u.display_name)}" data-username="${esc(u.username)}">${esc(u.display_name)}</option>`).join('');
+    sel.addEventListener('change', () => {
+      const chosen = sel.options[sel.selectedIndex];
+      document.getElementById('submit_for_user').value = chosen ? (chosen.dataset.username || '') : '';
+      renderPreview();
+      scheduleDraftSave();
+    });
+    inp.replaceWith(sel);
+    // Remove the now-unused datalist
+    const dl = document.getElementById('employee-list');
+    if (dl) dl.remove();
   } catch { /* ignore */ }
 }
 
@@ -236,7 +252,14 @@ async function openDraftFromHistory(did) {
 /* ── Shared form-fill (used by both draft restore and admin edit) ── */
 function fillFormData(data) {
   claimNoAuto = !editId && (data.claim_no_auto !== false);
-  document.getElementById('employee_name').value = data.employee_name || '';
+  const nameEl = document.getElementById('employee_name');
+  if (nameEl) nameEl.value = data.employee_name || '';
+  // Sync submit_for_user when employee_name is a select (admin mode)
+  if (nameEl && nameEl.tagName === 'SELECT') {
+    const sfuEl = document.getElementById('submit_for_user');
+    const chosen = [...nameEl.options].find(o => o.value === (data.employee_name || ''));
+    if (sfuEl) sfuEl.value = chosen ? (chosen.dataset.username || '') : '';
+  }
   document.getElementById('claim_no').value       = data.claim_no      || '';
   document.getElementById('currency').value       = data.currency      || 'SGD';
   document.getElementById('period_from')._flatpickr?.setDate(data.period_from || '', false);
@@ -569,17 +592,20 @@ async function generateExcel() {
 }
 
 function buildPayload() {
-  return {
-    employee_name: v('employee_name'),
-    claim_no:      v('claim_no'),
-    claim_no_auto: !editId && claimNoAuto,
-    period_from:   v('period_from') || document.getElementById('period_from').value,
-    period_to:     v('period_to')   || document.getElementById('period_to').value,
-    notes:         v('notes'),
-    currency:      (v('currency') || 'SGD').toUpperCase(),
-    items:         items.map(i => ({ date:i.date, description:i.description, gst:i.gst, total:i.total })),
-    attachments:   items.flatMap((i,idx) => i.files.map(f => ({ item_index:idx+1, description:i.description, ...f })))
+  const payload = {
+    employee_name:   v('employee_name'),
+    claim_no:        v('claim_no'),
+    claim_no_auto:   !editId && claimNoAuto,
+    period_from:     v('period_from') || document.getElementById('period_from').value,
+    period_to:       v('period_to')   || document.getElementById('period_to').value,
+    notes:           v('notes'),
+    currency:        (v('currency') || 'SGD').toUpperCase(),
+    items:           items.map(i => ({ date:i.date, description:i.description, gst:i.gst, total:i.total })),
+    attachments:     items.flatMap((i,idx) => i.files.map(f => ({ item_index:idx+1, description:i.description, ...f })))
   };
+  const sfu = document.getElementById('submit_for_user')?.value;
+  if (sfu) payload.submit_for_user = sfu;
+  return payload;
 }
 
 /* ── Print Form ─────────────────────────────────────── */

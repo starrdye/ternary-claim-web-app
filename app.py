@@ -439,10 +439,17 @@ def submit_claim():
             _next_claim_no()   # consume this pre-filled number
         claim_no = provided_no
 
+    # Allow admin to submit on behalf of another user
+    submit_for = str(data.get('submit_for_user', '')).strip()
+    if submit_for and session.get('role') == 'admin' and _get_user(submit_for):
+        submitted_by = submit_for
+    else:
+        submitted_by = session['username']
+
     record = {
         'id': submission_id,
         'submitted_at': datetime.now().isoformat(timespec='seconds'),
-        'submitted_by': session['username'],
+        'submitted_by': submitted_by,
         'status': 'Pending',
         'employee_name': data.get('employee_name', ''),
         'claim_no': claim_no,
@@ -539,7 +546,27 @@ def delete_submission(sid):
 @admin_required
 def list_users():
     users = _load_users()
-    return jsonify([{'username': u['username'], 'display_name': u['display_name']} for u in users])
+    return jsonify([{'username': u['username'], 'display_name': u['display_name'], 'role': u.get('role', 'employee')} for u in users])
+
+
+@app.route('/api/users/<username>', methods=['PATCH'])
+@admin_required
+def update_user(username):
+    data  = request.get_json(force=True)
+    users = _load_users()
+    user  = next((u for u in users if u['username'] == username), None)
+    if not user:
+        return jsonify({'error': 'User not found'}), 404
+    if 'display_name' in data:
+        dn = str(data['display_name']).strip()
+        if not dn:
+            return jsonify({'error': 'Display name cannot be empty'}), 400
+        user['display_name'] = dn
+    if data.get('password'):
+        user['password'] = _hash(str(data['password']))
+    with open(USERS_PATH, 'w', encoding='utf-8') as f:
+        json.dump(users, f, indent=2)
+    return jsonify({'ok': True})
 
 
 @app.route('/api/submissions/<sid>/archive', methods=['PATCH'])
@@ -941,7 +968,7 @@ def export_month():
     with zipfile.ZipFile(zip_buf, 'w', zipfile.ZIP_DEFLATED) as zf:
         for idx, s in enumerate(month_subs, start=1):
             name       = s.get('employee_name', 'Unknown')
-            first_name = name.split()[0] if name.split() else name
+            first_name = name.split()[0].strip(',') if name.split() else name.strip(',')
             claim_no   = s.get('claim_no', '')
             folder     = f"{idx}. {first_name} - {claim_no}"
             fp         = f"{zip_root}/{folder}"
