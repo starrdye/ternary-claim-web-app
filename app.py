@@ -944,7 +944,8 @@ def export_month():
     month = int(data.get('month', datetime.now().month))
 
     def _in_month(s):
-        for key in ('period_from', 'submitted_at'):
+        # Use period_to (claim end date) as the batch month; fall back to period_from then submitted_at
+        for key in ('period_to', 'period_from', 'submitted_at'):
             val = s.get(key, '')
             if not val:
                 continue
