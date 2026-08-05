@@ -538,16 +538,16 @@ function showExportModal() {
   const now = new Date();
   const m   = String(now.getMonth() + 1).padStart(2, '0');
   document.getElementById('export-month-input').value = `${now.getFullYear()}-${m}`;
-  document.getElementById('export-backdrop').classList.add('open');
+  document.getElementById('export-backdrop').style.display = 'flex';
 }
 
 function closeExportModal() {
-  document.getElementById('export-backdrop').classList.remove('open');
+  document.getElementById('export-backdrop').style.display = 'none';
 }
 
 async function doExport() {
   const val = document.getElementById('export-month-input').value;
-  if (!val) { showToast('Please select a month'); return; }
+  if (!val) { alert('Please select a month.'); return; }
   const [year, month] = val.split('-').map(Number);
 
   const btn = document.getElementById('export-dl-btn');
@@ -563,20 +563,25 @@ async function doExport() {
 
     if (!res.ok) {
       const err = await res.json().catch(() => ({}));
-      showToast(err.error || 'Export failed');
+      alert(err.error || 'Export failed — no submissions found for that month.');
       return;
     }
 
     const blob = await res.blob();
     const url  = URL.createObjectURL(blob);
     const a    = document.createElement('a');
-    a.href = url;
+    a.href     = url;
     a.download = res.headers.get('Content-Disposition')?.match(/filename="(.+)"/)?.[1]
-      || `Claims_${val}.zip`;
+                 || `Claims_${val}.zip`;
+    a.style.display = 'none';
+    document.body.appendChild(a);
     a.click();
-    URL.revokeObjectURL(url);
+    document.body.removeChild(a);
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
     closeExportModal();
     showToast('ZIP downloaded');
+  } catch (err) {
+    alert('Export failed: ' + (err.message || 'Unknown error'));
   } finally {
     btn.disabled = false;
     btn.innerHTML = `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg> Download ZIP`;
