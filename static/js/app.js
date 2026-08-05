@@ -412,29 +412,75 @@ async function handleFiles(input) {
   input.value = '';
 }
 
+/* Compress JPEG/PNG/WEBP images client-side before upload.
+   Skips files already under 1.5 MB. Returns original file for non-images. */
+async function compressImageFile(file) {
+  const COMPRESSABLE = new Set(['jpg', 'jpeg', 'png', 'webp']);
+  const ext = file.name.split('.').pop().toLowerCase();
+  if (!COMPRESSABLE.has(ext) || file.size < 1.5 * 1024 * 1024) return file;
+
+  return new Promise(resolve => {
+    const img    = new Image();
+    const objUrl = URL.createObjectURL(file);
+    img.onload = () => {
+      URL.revokeObjectURL(objUrl);
+      const MAX = 2400;
+      let w = img.naturalWidth, h = img.naturalHeight;
+      if (w > MAX || h > MAX) {
+        if (w > h) { h = Math.round(h * MAX / w); w = MAX; }
+        else       { w = Math.round(w * MAX / h); h = MAX; }
+      }
+      const canvas = document.createElement('canvas');
+      canvas.width = w; canvas.height = h;
+      canvas.getContext('2d').drawImage(img, 0, 0, w, h);
+      canvas.toBlob(blob => {
+        if (!blob || blob.size >= file.size) { resolve(file); return; }
+        // Keep original filename so server stores the right original_name
+        resolve(new File([blob], file.name, { type: 'image/jpeg', lastModified: Date.now() }));
+      }, 'image/jpeg', 0.82);
+    };
+    img.onerror = () => { URL.revokeObjectURL(objUrl); resolve(file); };
+    img.src = objUrl;
+  });
+}
+
 async function uploadFiles(fileList, itemId) {
   const it = getItem(itemId);
   if (!it) return;
   const list = document.getElementById('modal-file-list');
   for (const file of fileList) {
+    const sizeMB    = (file.size / 1024 / 1024).toFixed(1);
     const placeholder = { filename: null, original_name: file.name, url: '#' };
     const chip = addChip(list, placeholder, itemId, true);
     try {
+      const fileToSend = await compressImageFile(file);
+      const compressedMB = (fileToSend.size / 1024 / 1024).toFixed(1);
+      if (fileToSend !== file) {
+        // Show compression result briefly in chip label
+        const nameEl = chip.querySelector('.chip-name a');
+        if (nameEl) nameEl.textContent = `${file.name} (${sizeMB}→${compressedMB} MB)`;
+      }
       const fd = new FormData();
-      fd.append('file', file);
-      const res  = await fetch('/api/upload', { method:'POST', body:fd });
-      if (!res.ok) throw new Error();
+      fd.append('file', fileToSend, file.name); // always keep original filename
+      const res = await fetch('/api/upload', { method: 'POST', body: fd });
+      if (!res.ok) {
+        const errBody = await res.json().catch(() => ({}));
+        throw new Error(errBody.error || `Server error ${res.status}`);
+      }
       const data = await res.json();
+      // Always store original display name
+      data.original_name = file.name;
       Object.assign(placeholder, data);
       it.files.push({ ...placeholder });
       chip.querySelector('a').href        = data.url;
-      chip.querySelector('a').textContent = data.original_name;
+      chip.querySelector('a').textContent = file.name;
       chip.classList.remove('uploading');
       updateBadge(itemId);
       renderPreview();
       scheduleDraftSave();
-    } catch {
-      chip.querySelector('.chip-name').textContent = `Failed: ${file.name}`;
+    } catch (err) {
+      chip.querySelector('.chip-name').textContent = `Failed (${sizeMB} MB): ${file.name}`;
+      chip.querySelector('.chip-name').title = err.message || '';
       chip.style.borderColor = '#c0392b';
     }
   }
