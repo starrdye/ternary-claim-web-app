@@ -2,6 +2,7 @@ import os
 import io
 import json
 import uuid
+import zipfile
 import hashlib
 from datetime import datetime
 from functools import wraps
@@ -906,6 +907,78 @@ def _build_workbook(data):
                 ws2[f'{col}{i}'].font = Font(name=CG, size=11)
 
     return wb
+
+
+@app.route('/api/export/month', methods=['POST'])
+@admin_required
+def export_month():
+    data  = request.get_json(force=True)
+    year  = int(data.get('year',  datetime.now().year))
+    month = int(data.get('month', datetime.now().month))
+
+    def _in_month(s):
+        for key in ('period_from', 'submitted_at'):
+            val = s.get(key, '')
+            if not val:
+                continue
+            try:
+                d = datetime.fromisoformat(val.split('T')[0])
+                return d.year == year and d.month == month
+            except ValueError:
+                pass
+        return False
+
+    subs = _load_submissions()
+    month_subs = [s for s in subs if not s.get('archived') and _in_month(s)]
+    month_subs.sort(key=lambda s: (s.get('employee_name', ''), s.get('claim_no', '')))
+
+    if not month_subs:
+        return jsonify({'error': 'No submissions found for that month'}), 404
+
+    zip_root = '0. Claims'
+    zip_buf  = io.BytesIO()
+
+    with zipfile.ZipFile(zip_buf, 'w', zipfile.ZIP_DEFLATED) as zf:
+        for idx, s in enumerate(month_subs, start=1):
+            name       = s.get('employee_name', 'Unknown')
+            first_name = name.split()[0] if name.split() else name
+            claim_no   = s.get('claim_no', '')
+            folder     = f"{idx}. {first_name} - {claim_no}"
+            fp         = f"{zip_root}/{folder}"
+
+            # Excel claim form
+            wb = _build_workbook(s)
+            xbuf = io.BytesIO()
+            wb.save(xbuf)
+            safe = name.replace(' ', '_').replace(',', '')
+            xname = f"{safe}_Claim_{claim_no}.xlsx" if claim_no else f"{safe}_Claim.xlsx"
+            zf.writestr(f"{fp}/{xname}", xbuf.getvalue())
+
+            # Attachments (original filenames, de-duped)
+            seen = {}
+            for att in s.get('attachments', []):
+                stored   = os.path.basename(att.get('url', att.get('filename', '')))
+                original = att.get('original_name', stored)
+                src      = os.path.join(app.config['UPLOAD_FOLDER'], stored)
+                if not stored or not os.path.exists(src):
+                    continue
+                if original in seen:
+                    seen[original] += 1
+                    base, ext = os.path.splitext(original)
+                    save_as = f"{base} ({seen[original]}){ext}"
+                else:
+                    seen[original] = 1
+                    save_as = original
+                zf.write(src, f"{fp}/{save_as}")
+
+    zip_buf.seek(0)
+    month_label = datetime(year, month, 1).strftime('%b_%Y')
+    return send_file(
+        zip_buf,
+        mimetype='application/zip',
+        as_attachment=True,
+        download_name=f"Claims_{month_label}.zip"
+    )
 
 
 if __name__ == '__main__':
