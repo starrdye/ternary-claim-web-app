@@ -539,12 +539,10 @@ function showExportModal() {
   const m   = String(now.getMonth() + 1).padStart(2, '0');
   document.getElementById('export-month-input').value = `${now.getFullYear()}-${m}`;
   document.getElementById('export-backdrop').classList.add('open');
-  document.getElementById('export-modal').classList.add('open');
 }
 
 function closeExportModal() {
   document.getElementById('export-backdrop').classList.remove('open');
-  document.getElementById('export-modal').classList.remove('open');
 }
 
 async function doExport() {

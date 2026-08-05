@@ -140,26 +140,27 @@
   </div>
 </div>
 
-<!-- Export modal -->
-<div class="export-backdrop" id="export-backdrop" onclick="closeExportModal()"></div>
-<div class="export-modal" id="export-modal">
-  <div class="export-modal-hdr">
-    <div class="export-modal-title">Export Claims by Month</div>
-    <button class="drawer-close" style="color:var(--slate)" onclick="closeExportModal()">×</button>
-  </div>
-  <div class="export-modal-body">
-    <p class="export-modal-desc">Downloads a ZIP of all active submissions whose claim period <strong>end date</strong> falls in the selected month. Each person gets a sub-folder with their Excel form and all receipts.</p>
-    <div class="export-month-row">
-      <label for="export-month-input" class="export-month-label">Select month</label>
-      <input type="month" id="export-month-input" class="export-month-input" />
+<!-- Export modal — backdrop is the full-screen overlay; modal sits inside it centred by flexbox -->
+<div class="export-backdrop" id="export-backdrop" onclick="closeExportModal()">
+  <div class="export-modal" id="export-modal" onclick="event.stopPropagation()">
+    <div class="export-modal-hdr">
+      <div class="export-modal-title">Export Claims by Month</div>
+      <button class="drawer-close" style="color:var(--slate)" onclick="closeExportModal()">×</button>
     </div>
-  </div>
-  <div class="export-modal-footer">
-    <button class="dl-btn dl-btn-grey" onclick="closeExportModal()">Cancel</button>
-    <button class="dl-btn" id="export-dl-btn" onclick="doExport()">
-      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-      Download ZIP
-    </button>
+    <div class="export-modal-body">
+      <p class="export-modal-desc">Downloads a ZIP of all active submissions whose claim period <strong>end date</strong> falls in the selected month. Each person gets a sub-folder with their Excel form and all receipts.</p>
+      <div class="export-month-row">
+        <label for="export-month-input" class="export-month-label">Select month</label>
+        <input type="month" id="export-month-input" class="export-month-input" />
+      </div>
+    </div>
+    <div class="export-modal-footer">
+      <button class="dl-btn dl-btn-grey" onclick="closeExportModal()">Cancel</button>
+      <button class="dl-btn" id="export-dl-btn" onclick="doExport()">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+        Download ZIP
+      </button>
+    </div>
   </div>
 </div>
 

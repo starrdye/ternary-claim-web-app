@@ -10,7 +10,7 @@
   <link rel="stylesheet" href="/static/css/admin.css" />
   <style>
     .settings-wrap {
-      max-width: 600px;
+      max-width: 900px;
       margin: 40px auto;
       padding: 0 24px;
     }
@@ -108,8 +108,12 @@
       color: var(--muted);
     }
     /* User table */
+    #user-table-wrap {
+      overflow-x: auto;
+    }
     .user-table {
       width: 100%;
+      min-width: 620px;
       border-collapse: collapse;
       font-size: 13px;
     }
