@@ -982,21 +982,23 @@ def export_month():
             xname = f"{safe}_Claim_{claim_no}.xlsx" if claim_no else f"{safe}_Claim.xlsx"
             zf.writestr(f"{fp}/{xname}", xbuf.getvalue())
 
-            # Attachments (original filenames, de-duped)
+            # Attachments — prefix with item number: "1. receipt.jpg", "2. invoice.pdf"
             seen = {}
             for att in s.get('attachments', []):
                 stored   = os.path.basename(att.get('url', att.get('filename', '')))
                 original = att.get('original_name', stored)
+                idx      = att.get('item_index', 1)
                 src      = os.path.join(app.config['UPLOAD_FOLDER'], stored)
                 if not stored or not os.path.exists(src):
                     continue
-                if original in seen:
-                    seen[original] += 1
+                base_key = f"{idx}. {original}"
+                if base_key in seen:
+                    seen[base_key] += 1
                     base, ext = os.path.splitext(original)
-                    save_as = f"{base} ({seen[original]}){ext}"
+                    save_as = f"{idx}. {base} ({seen[base_key]}){ext}"
                 else:
-                    seen[original] = 1
-                    save_as = original
+                    seen[base_key] = 1
+                    save_as = base_key
                 zf.write(src, f"{fp}/{save_as}")
 
     zip_buf.seek(0)
