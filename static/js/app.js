@@ -413,31 +413,42 @@ async function handleFiles(input) {
 }
 
 /* Compress JPEG/PNG/WEBP images client-side before upload.
-   Skips files already under 1.5 MB. Returns original file for non-images. */
+   Targets output under ~900 KB; tries two passes if needed.
+   Returns original file for tiny images (<100 KB) or non-images. */
 async function compressImageFile(file) {
   const COMPRESSABLE = new Set(['jpg', 'jpeg', 'png', 'webp']);
   const ext = file.name.split('.').pop().toLowerCase();
-  if (!COMPRESSABLE.has(ext) || file.size < 1.5 * 1024 * 1024) return file;
+  if (!COMPRESSABLE.has(ext) || file.size < 100 * 1024) return file;
+
+  const TARGET = 900 * 1024; // stay under 900 KB
+
+  function drawBlob(imgEl, maxDim, quality) {
+    return new Promise(resolve => {
+      let w = imgEl.naturalWidth, h = imgEl.naturalHeight;
+      if (w > maxDim || h > maxDim) {
+        if (w > h) { h = Math.round(h * maxDim / w); w = maxDim; }
+        else       { w = Math.round(w * maxDim / h); h = maxDim; }
+      }
+      const canvas = document.createElement('canvas');
+      canvas.width = w; canvas.height = h;
+      canvas.getContext('2d').drawImage(imgEl, 0, 0, w, h);
+      canvas.toBlob(blob => resolve(blob), 'image/jpeg', quality);
+    });
+  }
 
   return new Promise(resolve => {
     const img    = new Image();
     const objUrl = URL.createObjectURL(file);
-    img.onload = () => {
+    img.onload = async () => {
       URL.revokeObjectURL(objUrl);
-      const MAX = 2400;
-      let w = img.naturalWidth, h = img.naturalHeight;
-      if (w > MAX || h > MAX) {
-        if (w > h) { h = Math.round(h * MAX / w); w = MAX; }
-        else       { w = Math.round(w * MAX / h); h = MAX; }
+      // Pass 1: 1800 px, quality 0.80
+      let blob = await drawBlob(img, 1800, 0.80);
+      // Pass 2: tighter settings if still over target
+      if (blob && blob.size > TARGET) {
+        blob = await drawBlob(img, 1200, 0.70);
       }
-      const canvas = document.createElement('canvas');
-      canvas.width = w; canvas.height = h;
-      canvas.getContext('2d').drawImage(img, 0, 0, w, h);
-      canvas.toBlob(blob => {
-        if (!blob || blob.size >= file.size) { resolve(file); return; }
-        // Keep original filename so server stores the right original_name
-        resolve(new File([blob], file.name, { type: 'image/jpeg', lastModified: Date.now() }));
-      }, 'image/jpeg', 0.82);
+      if (!blob || blob.size >= file.size) { resolve(file); return; }
+      resolve(new File([blob], file.name, { type: 'image/jpeg', lastModified: Date.now() }));
     };
     img.onerror = () => { URL.revokeObjectURL(objUrl); resolve(file); };
     img.src = objUrl;

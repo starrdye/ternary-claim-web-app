@@ -549,6 +549,28 @@ def list_users():
     return jsonify([{'username': u['username'], 'display_name': u['display_name'], 'role': u.get('role', 'employee')} for u in users])
 
 
+@app.route('/api/users', methods=['POST'])
+@admin_required
+def create_user():
+    data = request.get_json(force=True)
+    username = str(data.get('username', '')).strip().lower()
+    display_name = str(data.get('display_name', '')).strip()
+    password = str(data.get('password', '')).strip()
+    role = str(data.get('role', 'employee')).strip()
+    if not username or not display_name or not password:
+        return jsonify({'error': 'username, display_name and password are required'}), 400
+    if role not in ('admin', 'employee'):
+        role = 'employee'
+    users = _load_users()
+    if any(u['username'] == username for u in users):
+        return jsonify({'error': 'Username already exists'}), 409
+    users.append({'username': username, 'display_name': display_name,
+                  'password': _hash(password), 'role': role})
+    with open(USERS_PATH, 'w', encoding='utf-8') as f:
+        json.dump(users, f, indent=2)
+    return jsonify({'ok': True}), 201
+
+
 @app.route('/api/users/<username>', methods=['PATCH'])
 @admin_required
 def update_user(username):

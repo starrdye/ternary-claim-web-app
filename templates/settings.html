@@ -252,6 +252,23 @@
           <tbody id="user-tbody">
             <tr><td colspan="5" style="text-align:center;color:var(--muted);padding:20px">Loading…</td></tr>
           </tbody>
+          <tfoot>
+            <tr id="add-user-row" style="background:var(--paper)">
+              <td><input class="user-input" id="new-username" type="text" placeholder="username" autocomplete="off" style="min-width:90px" /></td>
+              <td>
+                <select class="user-input" id="new-role" style="min-width:100px">
+                  <option value="employee">employee</option>
+                  <option value="admin">admin</option>
+                </select>
+              </td>
+              <td><input class="user-input" id="new-display-name" type="text" placeholder="Display name" /></td>
+              <td><input class="user-input user-pw-input" id="new-password" type="password" placeholder="Password" autocomplete="new-password" /></td>
+              <td style="white-space:nowrap">
+                <button class="user-save-btn" onclick="addUser()">+ Add</button>
+                <span class="user-row-toast" id="toast-add-user"></span>
+              </td>
+            </tr>
+          </tfoot>
         </table>
       </div>
     </div>
@@ -328,6 +345,45 @@
     const toast = document.getElementById(`toast-${username}`);
     toast.classList.add('show');
     setTimeout(() => toast.classList.remove('show'), 2500);
+  }
+
+  async function addUser() {
+    const username    = document.getElementById('new-username').value.trim().toLowerCase();
+    const role        = document.getElementById('new-role').value;
+    const displayName = document.getElementById('new-display-name').value.trim();
+    const password    = document.getElementById('new-password').value;
+    const toast       = document.getElementById('toast-add-user');
+    if (!username || !displayName || !password) {
+      toast.style.color = '#721c24';
+      toast.textContent = 'All fields required';
+      toast.classList.add('show');
+      setTimeout(() => toast.classList.remove('show'), 3000);
+      return;
+    }
+    const btn = document.querySelector('#add-user-row .user-save-btn');
+    btn.disabled = true;
+    const res = await fetch('/api/users', {
+      method:  'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body:    JSON.stringify({ username, display_name: displayName, password, role }),
+    });
+    btn.disabled = false;
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      toast.style.color = '#721c24';
+      toast.textContent = err.error || 'Failed';
+      toast.classList.add('show');
+      setTimeout(() => toast.classList.remove('show'), 3000);
+      return;
+    }
+    document.getElementById('new-username').value    = '';
+    document.getElementById('new-display-name').value = '';
+    document.getElementById('new-password').value    = '';
+    toast.style.color = '#155724';
+    toast.textContent = '✓ Added';
+    toast.classList.add('show');
+    setTimeout(() => toast.classList.remove('show'), 2500);
+    loadUsers();
   }
 
   // Allow Enter key to save in user rows
