@@ -27,6 +27,11 @@ SETTINGS_PATH = os.path.join(os.path.dirname(__file__), 'settings.json')
 
 os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
 
+# Partial files for chunked uploads live outside UPLOAD_FOLDER so they are never served
+CHUNK_FOLDER = os.path.join(os.path.dirname(__file__), 'uploads_tmp')
+os.makedirs(CHUNK_FOLDER, exist_ok=True)
+ALLOWED_UPLOAD_EXTS = {'.jpg', '.jpeg', '.png', '.gif', '.pdf', '.webp', '.heic', '.msg', '.docx', '.doc'}
+
 
 # ── Auth helpers ──────────────────────────────────────
 def _hash(pw: str) -> str:
@@ -338,6 +343,11 @@ def convert_to_pdf(filename):
     }), 500
 
 
+@app.errorhandler(413)
+def too_large(e):
+    return jsonify({'error': 'File too large (max 100 MB)'}), 413
+
+
 @app.route('/api/upload', methods=['POST'])
 @login_required
 def upload_file():
@@ -348,13 +358,85 @@ def upload_file():
         return jsonify({'error': 'No filename'}), 400
 
     original_ext = os.path.splitext(file.filename)[1].lower()
-    allowed = {'.jpg', '.jpeg', '.png', '.gif', '.pdf', '.webp', '.heic', '.msg', '.docx', '.doc'}
-    if original_ext not in allowed:
+    if original_ext not in ALLOWED_UPLOAD_EXTS:
         return jsonify({'error': f'File type {original_ext} not allowed'}), 400
 
     temp_unique_name = f"{uuid.uuid4().hex}{original_ext}"
     save_path = os.path.join(app.config['UPLOAD_FOLDER'], temp_unique_name)
     file.save(save_path)
+    return _finalize_upload(save_path, file.filename)
+
+
+def _cleanup_stale_chunks(max_age_seconds=24 * 3600):
+    import time
+    now = time.time()
+    for name in os.listdir(CHUNK_FOLDER):
+        path = os.path.join(CHUNK_FOLDER, name)
+        try:
+            if now - os.path.getmtime(path) > max_age_seconds:
+                os.remove(path)
+        except OSError:
+            pass
+
+
+@app.route('/api/upload-chunk', methods=['POST'])
+@login_required
+def upload_chunk():
+    """Receive a file in sequential pieces so each request stays under any
+    reverse-proxy body-size limit (e.g. nginx's 1 MB default)."""
+    import re
+    chunk = request.files.get('chunk')
+    upload_id = str(request.form.get('upload_id', ''))
+    filename = str(request.form.get('filename', ''))
+    try:
+        index = int(request.form.get('index', ''))
+        total = int(request.form.get('total', ''))
+    except ValueError:
+        return jsonify({'error': 'Invalid chunk index'}), 400
+    if chunk is None or not filename:
+        return jsonify({'error': 'Missing chunk or filename'}), 400
+    if not re.fullmatch(r'[0-9a-f]{32}', upload_id):
+        return jsonify({'error': 'Invalid upload id'}), 400
+    if total < 1 or not (0 <= index < total):
+        return jsonify({'error': 'Invalid chunk index'}), 400
+
+    original_ext = os.path.splitext(filename)[1].lower()
+    if original_ext not in ALLOWED_UPLOAD_EXTS:
+        return jsonify({'error': f'File type {original_ext} not allowed'}), 400
+
+    # Bind the partial file to the uploading user so ids can't be hijacked
+    part_path = os.path.join(CHUNK_FOLDER, f"{session['username']}_{upload_id}.part")
+    progress_key = f'chunk_{upload_id}'
+    if index == 0:
+        _cleanup_stale_chunks()
+        mode = 'wb'
+    else:
+        if session.get(progress_key) != index or not os.path.exists(part_path):
+            return jsonify({'error': 'Chunk out of order; please retry the upload'}), 409
+        mode = 'ab'
+    with open(part_path, mode) as f:
+        chunk.save(f)
+    if os.path.getsize(part_path) > app.config['MAX_CONTENT_LENGTH']:
+        os.remove(part_path)
+        session.pop(progress_key, None)
+        return jsonify({'error': 'File too large (max 100 MB)'}), 413
+
+    if index < total - 1:
+        session[progress_key] = index + 1
+        return jsonify({'ok': True, 'received': index + 1})
+
+    # Last chunk: move the assembled file into uploads and post-process
+    session.pop(progress_key, None)
+    temp_unique_name = f"{uuid.uuid4().hex}{original_ext}"
+    save_path = os.path.join(app.config['UPLOAD_FOLDER'], temp_unique_name)
+    os.replace(part_path, save_path)
+    return _finalize_upload(save_path, filename)
+
+
+def _finalize_upload(save_path, original_filename):
+    """Post-process a saved upload (Word/MSG -> PDF) and return the JSON response."""
+    original_ext = os.path.splitext(original_filename)[1].lower()
+    temp_unique_name = os.path.basename(save_path)
 
     # Convert Word / MSG attachments to PDF immediately on upload
     if original_ext in ('.docx', '.doc', '.msg'):
@@ -406,13 +488,13 @@ def upload_file():
 
         return jsonify({
             'filename': pdf_unique_name,
-            'original_name': file.filename,
+            'original_name': original_filename,
             'url': f'/uploads/{pdf_unique_name}'
         })
 
     return jsonify({
         'filename': temp_unique_name,
-        'original_name': file.filename,
+        'original_name': original_filename,
         'url': f'/uploads/{temp_unique_name}'
     })
 

@@ -117,7 +117,18 @@ Each line item has its own upload button. Click to open the upload modal, then d
 
 Supported formats: JPG, PNG, PDF, MSG, DOCX, GIF, WEBP, HEIC, DOC — up to 100 MB per file.
 
-**Client-side image compression:** JPEG, PNG, and WEBP images larger than ~1.5 MB are automatically resized (max 2400 px on the longest edge, 82% JPEG quality) before upload using the Canvas API. This prevents failures caused by server body-size limits without any quality loss visible to Finance.
+**Client-side image compression:** JPEG, PNG, and WEBP images over 100 KB are resized and re-encoded as JPEG (1800 px @ 80%, then 1200 px @ 70% if still over ~900 KB) before upload, to save storage and bandwidth.
+
+**Chunked uploads:** Every file (PDF, DOCX, MSG, images) is sent to `/api/upload-chunk` in sequential 512 KB pieces and reassembled on the server (partial files live in `uploads_tmp/`, not the public `uploads/` folder). No single request exceeds the reverse proxy's body-size limit, so large PDFs upload even behind nginx's 1 MB default.
+
+**Server proxy limit (recommended anyway):** On the Volcano Engine host, raise the nginx limit so the legacy `/api/upload` endpoint and any future large requests also work:
+
+```nginx
+# /etc/nginx/nginx.conf (http block) or the site's server block
+client_max_body_size 100M;
+```
+
+Then `sudo nginx -t && sudo systemctl reload nginx`. If a Volcano Engine CLB / API Gateway sits in front, check its request-body limit too.
 
 ### Document Conversion Mechanics
 1. **Immediate pre-conversion:** Word (`.docx`, `.doc`) and Outlook (`.msg`) files are converted to PDF at upload time, so print preview loads instantly.
@@ -134,7 +145,8 @@ Supported formats: JPG, PNG, PDF, MSG, DOCX, GIF, WEBP, HEIC, DOC — up to 100 
 | `GET` | `/` | Claim form (employee view, login required) |
 | `GET` | `/admin` | Admin dashboard (admin role required) |
 | `GET` | `/settings` | Settings page (admin role required) |
-| `POST` | `/api/upload` | Upload a file; returns `{ filename, original_name, url }` |
+| `POST` | `/api/upload` | Upload a whole file in one request; returns `{ filename, original_name, url }` |
+| `POST` | `/api/upload-chunk` | Chunked upload (`upload_id`, `index`, `total`, `filename`, `chunk`); last chunk returns `{ filename, original_name, url }` |
 | `POST` | `/api/submit` | Submit a claim; returns `{ id }` |
 | `GET` | `/api/submissions` | List submissions (employees see own; admins see all) |
 | `GET` | `/api/submissions/<id>` | Get a single submission |

@@ -455,6 +455,52 @@ async function compressImageFile(file) {
   });
 }
 
+/* Upload a file in sequential pieces so no single request exceeds the
+   hosting proxy's body-size limit (nginx rejects >1 MB with 413 by default). */
+const UPLOAD_CHUNK_SIZE = 512 * 1024;
+const MAX_UPLOAD_SIZE   = 100 * 1024 * 1024;
+
+async function uploadInChunks(file, filename, onProgress) {
+  if (file.size > MAX_UPLOAD_SIZE) throw new Error('File too large (max 100 MB)');
+  const uploadId = Array.from(crypto.getRandomValues(new Uint8Array(16)),
+                              b => b.toString(16).padStart(2, '0')).join('');
+  const total = Math.max(1, Math.ceil(file.size / UPLOAD_CHUNK_SIZE));
+  let data = null;
+  for (let index = 0; index < total; index++) {
+    const piece = file.slice(index * UPLOAD_CHUNK_SIZE, (index + 1) * UPLOAD_CHUNK_SIZE);
+    let lastErr;
+    for (let attempt = 0; attempt < 3; attempt++) {
+      try {
+        const fd = new FormData();
+        fd.append('upload_id', uploadId);
+        fd.append('index', index);
+        fd.append('total', total);
+        fd.append('filename', filename); // always keep original filename
+        fd.append('chunk', piece, filename);
+        const res = await fetch('/api/upload-chunk', { method: 'POST', body: fd });
+        if (!res.ok) {
+          const errBody = await res.json().catch(() => ({}));
+          const msg = errBody.error
+            || (res.status === 413 ? 'Rejected by server size limit (413)' : `Server error ${res.status}`);
+          const err = new Error(msg);
+          err.fatal = res.status >= 400 && res.status < 500 && res.status !== 408 && res.status !== 429;
+          throw err;
+        }
+        data = await res.json();
+        lastErr = null;
+        break;
+      } catch (err) {
+        lastErr = err;
+        if (err.fatal) break;
+        await new Promise(r => setTimeout(r, 800 * (attempt + 1)));
+      }
+    }
+    if (lastErr) throw lastErr;
+    if (onProgress) onProgress(Math.round(((index + 1) / total) * 100));
+  }
+  return data;
+}
+
 async function uploadFiles(fileList, itemId) {
   const it = getItem(itemId);
   if (!it) return;
@@ -471,14 +517,10 @@ async function uploadFiles(fileList, itemId) {
         const nameEl = chip.querySelector('.chip-name a');
         if (nameEl) nameEl.textContent = `${file.name} (${sizeMB}→${compressedMB} MB)`;
       }
-      const fd = new FormData();
-      fd.append('file', fileToSend, file.name); // always keep original filename
-      const res = await fetch('/api/upload', { method: 'POST', body: fd });
-      if (!res.ok) {
-        const errBody = await res.json().catch(() => ({}));
-        throw new Error(errBody.error || `Server error ${res.status}`);
-      }
-      const data = await res.json();
+      const nameEl = chip.querySelector('.chip-name a');
+      const data = await uploadInChunks(fileToSend, file.name, pct => {
+        if (nameEl && fileToSend.size > UPLOAD_CHUNK_SIZE) nameEl.textContent = `${file.name} (uploading ${pct}%)`;
+      });
       // Always store original display name
       data.original_name = file.name;
       Object.assign(placeholder, data);
@@ -490,7 +532,7 @@ async function uploadFiles(fileList, itemId) {
       renderPreview();
       scheduleDraftSave();
     } catch (err) {
-      chip.querySelector('.chip-name').textContent = `Failed (${sizeMB} MB): ${file.name}`;
+      chip.querySelector('.chip-name').textContent = `Failed (${sizeMB} MB): ${file.name} — ${err.message || 'upload error'}`;
       chip.querySelector('.chip-name').title = err.message || '';
       chip.style.borderColor = '#c0392b';
     }
