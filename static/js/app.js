@@ -61,7 +61,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   // Save draft on page unload (best-effort)
   window.addEventListener('beforeunload', () => {
-    if (!editId && currentDraftId) flushDraftSave();
+    if (editId || currentDraftId) flushDraftSave();
   });
 
   setupModalDragDrop();
@@ -141,17 +141,54 @@ async function fetchLatestDraft() {
   } catch { return null; }
 }
 
-/* Schedule auto-save 800ms after last change — does not block typing */
+/* Schedule auto-save after last change — does not block typing.
+   New claims save as a draft; editing a submitted claim saves the claim itself. */
 function scheduleDraftSave() {
-  if (editId) return;
   clearTimeout(draftSaveTimer);
-  draftSaveTimer = setTimeout(saveDraft, 800);
+  if (editId) { editDirty = true; draftSaveTimer = setTimeout(saveEdit, 1500); }
+  else draftSaveTimer = setTimeout(saveDraft, 800);
+}
+
+/* Auto-save changes to an existing submission (edit mode) */
+let editDirty = false;
+let editSaveInFlight = null;
+function canSaveEdit() {
+  return !!v('employee_name') && items.some(i => i.description || i.total);
+}
+async function saveEdit() {
+  if (!editId || !editDirty) return true;
+  if (!canSaveEdit()) { setDraftStatus('incomplete'); return false; }
+  if (editSaveInFlight) await editSaveInFlight;  // never overlap two PUTs
+  editDirty = false;
+  setDraftStatus('saving');
+  editSaveInFlight = (async () => {
+    try {
+      const res = await fetch(`/api/submissions/${editId}`, {
+        method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(buildPayload()),
+      });
+      if (!res.ok) throw new Error();
+      setDraftStatus('saved');
+      return true;
+    } catch {
+      editDirty = true;               // retry on next change / unload
+      setDraftStatus('error');
+      return false;
+    } finally { editSaveInFlight = null; }
+  })();
+  return editSaveInFlight;
 }
 
 /* Immediate save (used on blur and beforeunload) */
 function flushDraftSave() {
   clearTimeout(draftSaveTimer);
-  if (!editId && !isDraftEmpty()) {
+  if (editId) {
+    if (editDirty && canSaveEdit()) {
+      fetch(`/api/submissions/${editId}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(buildPayload()), keepalive: true });
+      editDirty = false;
+    }
+    return;
+  }
+  if (!isDraftEmpty()) {
     if (!currentDraftId) currentDraftId = genDraftId();
     navigator.sendBeacon
       ? navigator.sendBeacon(`/api/drafts/${currentDraftId}`, new Blob([JSON.stringify(buildPayload())], { type: 'application/json' }))
@@ -189,9 +226,16 @@ function setDraftStatus(status) {
     el.textContent = 'Saving…';
     el.className = 'draft-status saving';
   } else if (status === 'saved') {
-    el.textContent = 'Draft saved';
+    // Stay visible so users can see their work is safe
+    const t = new Date().toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
+    el.textContent = `${editId ? 'Changes saved' : 'Draft saved'} · ${t}`;
     el.className = 'draft-status saved';
-    draftFadeTimer = setTimeout(() => { el.textContent = ''; el.className = 'draft-status'; }, 3000);
+  } else if (status === 'incomplete') {
+    el.textContent = 'Not saved — add employee name and an item';
+    el.className = 'draft-status error';
+  } else if (status === 'error') {
+    el.textContent = 'Save failed — will retry';
+    el.className = 'draft-status error';
   } else {
     el.textContent = '';
     el.className = 'draft-status';
@@ -299,11 +343,9 @@ async function loadEditMode(sid) {
 
   fillFormData(s);
 
-  // Hide draft controls in edit mode
+  // Hide the draft button in edit mode; changes auto-save to the claim itself
   const saveDraftBtn = document.getElementById('save-draft-btn');
   if (saveDraftBtn) saveDraftBtn.style.display = 'none';
-  const draftEl = document.getElementById('draft-status');
-  if (draftEl) draftEl.style.display = 'none';
 
   const goldBtn = document.querySelector('.tb-btn.tb-gold');
   if (goldBtn) { goldBtn.innerHTML = goldBtn.innerHTML.replace('Submit Claim', 'Save Changes'); }
@@ -312,8 +354,8 @@ async function loadEditMode(sid) {
   const banner = document.createElement('div');
   banner.style.cssText = 'background:#fff3cd;color:#856404;font-size:12px;font-weight:600;padding:6px 18px;text-align:center;border-bottom:1px solid #ffc107';
   const backHref  = currentUser?.role === 'admin' ? '/admin' : '/';
-  const backLabel = currentUser?.role === 'admin' ? 'Back to Admin' : 'Cancel Edit';
-  banner.innerHTML = `Editing submission <strong>${sid}</strong> — <a href="${backHref}" style="color:#856404">${backLabel}</a>`;
+  const backLabel = currentUser?.role === 'admin' ? 'Back to Admin' : 'Done';
+  banner.innerHTML = `Editing submission <strong>${sid}</strong> — changes save automatically — <a href="${backHref}" style="color:#856404">${backLabel}</a>`;
   document.querySelector('.topbar').after(banner);
 }
 
@@ -645,6 +687,9 @@ const esc = s  => String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').repla
 async function submitClaim() {
   if (!v('employee_name')) { alert('Please enter the employee name.'); return; }
   if (!items.some(i => i.description || i.total)) { alert('Please add at least one item.'); return; }
+  clearTimeout(draftSaveTimer);
+  if (editSaveInFlight) await editSaveInFlight;
+  editDirty = false;
   const payload = buildPayload();
   const url    = editId ? `/api/submissions/${editId}` : '/api/submit';
   const method = editId ? 'PUT' : 'POST';

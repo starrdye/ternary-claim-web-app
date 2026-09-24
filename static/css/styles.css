@@ -653,6 +653,9 @@ tr:hover .del-btn {
 .draft-status.saved {
   color: var(--gold);
 }
+.draft-status.error {
+  color: #ffb4a8;
+}
 
 /* ═══════════════════════════════════════════════════
    HISTORY DRAWER
@@ -698,7 +701,7 @@ tr:hover .del-btn {
 .hist-close:hover { color: #fff; }
 
 .hist-body {
-  flex: 1; overflow-y: auto;
+  flex: 1; min-height: 0; overflow-y: auto;
   padding: 12px 14px;
   display: flex; flex-direction: column; gap: 9px;
 }
@@ -707,7 +710,8 @@ tr:hover .del-btn {
   color: var(--muted); font-size: 13px; font-style: italic;
 }
 
-/* Claim cards */
+/* Claim cards — never shrink; the drawer body scrolls instead */
+.hist-body > * { flex-shrink: 0; }
 .hc {
   border: 1px solid var(--border-l);
   border-radius: 4px;
