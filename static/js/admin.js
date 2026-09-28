@@ -347,7 +347,7 @@ async function adminPrintReceipts() {
   const s = allSubmissions.find(x => x.id === activeId);
   if (!s) return;
 
-  const IMAGE_EXTS = new Set(['jpg','jpeg','png','gif','webp','heic']);
+  const IMAGE_EXTS = new Set(['jpg','jpeg','png','gif','webp','heic','heif']);
   const PDF_EXTS   = new Set(['pdf']);
   const DOC_EXTS   = new Set(['docx','doc','msg']);
   const pages = [];
@@ -654,5 +654,5 @@ function esc(s) {
 }
 function fileIcon(name) {
   const ext = (name||'').split('.').pop().toLowerCase();
-  return { pdf:'📄', jpg:'🖼', jpeg:'🖼', png:'🖼', gif:'🖼', webp:'🖼', heic:'🖼', msg:'📧', docx:'📝', doc:'📝' }[ext] || '📎';
+  return { pdf:'📄', jpg:'🖼', jpeg:'🖼', png:'🖼', gif:'🖼', webp:'🖼', heic:'🖼', heif:'🖼', msg:'📧', docx:'📝', doc:'📝' }[ext] || '📎';
 }

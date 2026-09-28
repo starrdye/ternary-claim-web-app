@@ -32,7 +32,8 @@ os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
 # Partial files for chunked uploads live outside UPLOAD_FOLDER so they are never served
 CHUNK_FOLDER = os.path.join(os.path.dirname(__file__), 'uploads_tmp')
 os.makedirs(CHUNK_FOLDER, exist_ok=True)
-ALLOWED_UPLOAD_EXTS = {'.jpg', '.jpeg', '.png', '.gif', '.pdf', '.webp', '.heic', '.msg', '.docx', '.doc'}
+ALLOWED_UPLOAD_EXTS = {'.jpg', '.jpeg', '.png', '.gif', '.pdf', '.webp', '.heic', '.heif', '.msg', '.docx', '.doc'}
+HEIC_EXTS = ('.heic', '.heif')   # Apple photo formats most browsers can't display or print
 
 
 # ── Auth helpers ──────────────────────────────────────
@@ -259,9 +260,33 @@ def settings_page():
     return render_template('settings.html')
 
 
+def _heic_to_jpeg(src_path, dest_path):
+    """Convert an Apple HEIC/HEIF photo to JPEG, keeping its orientation. Returns True on success."""
+    try:
+        from PIL import Image, ImageOps
+        import pillow_heif
+        pillow_heif.register_heif_opener()
+        with Image.open(src_path) as img:
+            img = ImageOps.exif_transpose(img)
+            if img.mode not in ('RGB', 'L'):
+                img = img.convert('RGB')
+            img.thumbnail((2400, 2400))   # plenty for a printed receipt
+            img.save(dest_path, 'JPEG', quality=88, optimize=True)
+        return True
+    except Exception as e:
+        app.logger.error('HEIC conversion failed for %s: %s', src_path, e)
+        return False
+
+
 @app.route('/uploads/<path:filename>')
 @login_required
 def uploaded_file(filename):
+    # HEIC files uploaded before auto-conversion existed: serve (and cache) a JPEG copy
+    if os.path.splitext(filename)[1].lower() in HEIC_EXTS and '/' not in filename and '\\' not in filename:
+        src = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+        cached = os.path.splitext(src)[0] + '.converted.jpg'
+        if os.path.exists(src) and (os.path.exists(cached) or _heic_to_jpeg(src, cached)):
+            return send_file(cached, mimetype='image/jpeg')
     return send_from_directory(app.config['UPLOAD_FOLDER'], filename)
 
 
@@ -523,6 +548,23 @@ def _finalize_upload(save_path, original_filename):
     """Post-process a saved upload (Word/MSG -> PDF) and return the JSON response."""
     original_ext = os.path.splitext(original_filename)[1].lower()
     temp_unique_name = os.path.basename(save_path)
+
+    # Convert Apple HEIC/HEIF photos to JPEG so every browser can show and print them
+    if original_ext in HEIC_EXTS:
+        jpg_unique_name = f"{uuid.uuid4().hex}.jpg"
+        jpg_save_path = os.path.join(app.config['UPLOAD_FOLDER'], jpg_unique_name)
+        ok = _heic_to_jpeg(save_path, jpg_save_path)
+        try:
+            os.remove(save_path)
+        except OSError:
+            pass
+        if not ok:
+            return jsonify({'error': 'Could not convert this HEIC photo. Please export it as JPEG and try again.'}), 500
+        return jsonify({
+            'filename': jpg_unique_name,
+            'original_name': original_filename,
+            'url': f'/uploads/{jpg_unique_name}'
+        })
 
     # Convert Word / MSG attachments to PDF immediately on upload
     if original_ext in ('.docx', '.doc', '.msg'):
