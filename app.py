@@ -5,15 +5,46 @@ import uuid
 import zipfile
 import hashlib
 import secrets
+import re
+import time
+import threading
 from datetime import datetime
 from functools import wraps
 from flask import Flask, request, jsonify, send_file, render_template, send_from_directory, session, redirect, url_for, g
+from werkzeug.security import generate_password_hash, check_password_hash
 from openpyxl import load_workbook, Workbook
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 from openpyxl.utils import get_column_letter
 
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+
+
+def _load_secret_key():
+    """Use SECRET_KEY from the environment; otherwise a random key generated once and
+    kept in a git-ignored file. Never fall back to a value written in the code."""
+    env_key = os.environ.get('SECRET_KEY')
+    if env_key:
+        return env_key
+    path = os.path.join(BASE_DIR, '.secret_key')
+    if os.path.exists(path):
+        with open(path, encoding='utf-8') as f:
+            key = f.read().strip()
+        if key:
+            return key
+    key = secrets.token_hex(32)
+    with open(path, 'w', encoding='utf-8') as f:
+        f.write(key)
+    try:
+        os.chmod(path, 0o600)
+    except OSError:
+        pass
+    return key
+
+
 app = Flask(__name__)
-app.secret_key = os.environ.get('SECRET_KEY', 'ternary-claim-secret-2026-change-in-prod')
+app.secret_key = _load_secret_key()
+app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'   # browsers won't send the login cookie on cross-site POSTs
+app.config['SESSION_COOKIE_HTTPONLY'] = True
 app.config['UPLOAD_FOLDER'] = os.path.join(os.path.dirname(__file__), 'uploads')
 app.config['MAX_CONTENT_LENGTH'] = 100 * 1024 * 1024  # 100 MB
 
@@ -36,31 +67,94 @@ ALLOWED_UPLOAD_EXTS = {'.jpg', '.jpeg', '.png', '.gif', '.pdf', '.webp', '.heic'
 HEIC_EXTS = ('.heic', '.heif')   # Apple photo formats most browsers can't display or print
 
 
+# ── JSON file storage ─────────────────────────────────
+# Every request that changes data holds DATA_LOCK for its whole load-modify-save
+# cycle (see _lock_writes), and files are replaced atomically so a reader never
+# sees a half-written file. Run a single server process (not multiple workers).
+DATA_LOCK = threading.RLock()
+
+def _read_json(path, default):
+    if not os.path.exists(path):
+        return default
+    for attempt in range(5):
+        try:
+            with open(path, 'r', encoding='utf-8') as f:
+                return json.load(f)
+        except PermissionError:          # Windows: file briefly locked by a replace
+            time.sleep(0.05 * (attempt + 1))
+    with open(path, 'r', encoding='utf-8') as f:
+        return json.load(f)
+
+def _write_json(path, data):
+    tmp = f'{path}.{uuid.uuid4().hex}.tmp'
+    with open(tmp, 'w', encoding='utf-8') as f:
+        json.dump(data, f, indent=2, ensure_ascii=False)
+        f.flush()
+        os.fsync(f.fileno())
+    for attempt in range(5):
+        try:
+            os.replace(tmp, path)
+            return
+        except PermissionError:
+            time.sleep(0.05 * (attempt + 1))
+    os.replace(tmp, path)
+
+# Mutating endpoints that don't touch the JSON stores (slow file work) skip the lock
+NO_LOCK_ENDPOINTS = {'upload_file', 'upload_chunk', 'generate_excel', 'export_month', 'static'}
+
+@app.before_request
+def _lock_writes():
+    if request.method in ('POST', 'PUT', 'PATCH', 'DELETE') and request.endpoint not in NO_LOCK_ENDPOINTS:
+        DATA_LOCK.acquire()
+        g._holds_data_lock = True
+
+@app.teardown_request
+def _unlock_writes(exc):
+    if g.pop('_holds_data_lock', False):
+        DATA_LOCK.release()
+
+@app.before_request
+def _require_json_bodies():
+    """Reject form/text bodies on JSON endpoints (blocks cross-site form posts)."""
+    if request.method in ('POST', 'PUT', 'PATCH', 'DELETE') and request.content_length:
+        if request.endpoint in ('upload_file', 'upload_chunk'):
+            return None
+        if not request.is_json:
+            return jsonify({'error': 'Content-Type must be application/json'}), 415
+    return None
+
+
 # ── Auth helpers ──────────────────────────────────────
 def _hash(pw: str) -> str:
-    return hashlib.sha256(pw.encode()).hexdigest()
+    return generate_password_hash(pw)
+
+def _is_legacy_hash(stored: str) -> bool:
+    return bool(re.fullmatch(r'[0-9a-f]{64}', stored or ''))
+
+def _check_password(user, pw: str) -> bool:
+    stored = user.get('password', '')
+    if _is_legacy_hash(stored):   # unsalted SHA-256 from older versions
+        return secrets.compare_digest(stored, hashlib.sha256(pw.encode()).hexdigest())
+    try:
+        return check_password_hash(stored, pw)
+    except ValueError:
+        return False
+
+def _save_users(users):
+    _write_json(USERS_PATH, users)
 
 def _load_users():
     if not os.path.exists(USERS_PATH):
-        defaults = [
-            {'username': 'admin',    'password': _hash('TerClaim16!'),   'role': 'admin',    'display_name': 'Admin'},
-            {'username': 'xingye',   'password': _hash('pass1234'),   'role': 'employee', 'display_name': 'Xingye, Zhou'},
-            {'username': 'peter',    'password': _hash('pass1234'),   'role': 'employee', 'display_name': 'Peter Tan'},
-            {'username': 'jason',    'password': _hash('pass1234'),   'role': 'employee', 'display_name': 'Jason Chan'},
-            {'username': 'mary',     'password': _hash('pass1234'),   'role': 'employee', 'display_name': 'Mary'},
-            {'username': 'chuiwhei', 'password': _hash('pass1234'),   'role': 'employee', 'display_name': 'Chui Whei'},
-            {'username': 'egan',     'password': _hash('pass1234'),   'role': 'employee', 'display_name': 'Egan'},
-            {'username': 'edward',   'password': _hash('pass1234'),   'role': 'employee', 'display_name': 'Edward'},
-            {'username': 'thomas',   'password': _hash('pass1234'),   'role': 'employee', 'display_name': 'Thomas'},
-            {'username': 'yongchuan','password': _hash('pass1234'),   'role': 'employee', 'display_name': 'Yong Chuan'},
-            {'username': 'gabriel',  'password': _hash('pass1234'),   'role': 'employee', 'display_name': 'Gabriel'},
-            {'username': 'hannah',   'password': _hash('hannah2026'), 'role': 'employee', 'display_name': 'Hannah'},
-        ]
-        with open(USERS_PATH, 'w', encoding='utf-8') as f:
-            json.dump(defaults, f, indent=2)
+        # First run: create only an admin with a one-off random password (see server log).
+        # Default passwords must never live in the code: this repo is public.
+        temp_pw = secrets.token_urlsafe(12)
+        defaults = [{'username': 'admin', 'password': _hash(temp_pw), 'role': 'admin', 'display_name': 'Admin'}]
+        _save_users(defaults)
+        app.logger.warning('users.json was missing: created "admin" with temporary password %s  '
+                           '(log in and change it in Settings)', temp_pw)
         return defaults
-    with open(USERS_PATH, 'r', encoding='utf-8') as f:
-        return json.load(f)
+    return _read_json(USERS_PATH, [])
+
 
 def _get_user(username):
     return next((u for u in _load_users() if u['username'] == username), None)
@@ -79,14 +173,10 @@ API_KEY_ENDPOINTS = {
 }
 
 def _load_api_keys():
-    if not os.path.exists(API_KEYS_PATH):
-        return []
-    with open(API_KEYS_PATH, encoding='utf-8') as f:
-        return json.load(f)
+    return _read_json(API_KEYS_PATH, [])
 
 def _save_api_keys(keys):
-    with open(API_KEYS_PATH, 'w', encoding='utf-8') as f:
-        json.dump(keys, f, indent=2)
+    _write_json(API_KEYS_PATH, keys)
 
 def _hash_api_key(key: str) -> str:
     return hashlib.sha256(key.encode()).hexdigest()
@@ -110,8 +200,12 @@ def _auth_from_api_key():
     now = datetime.now()
     last = rec.get('last_used_at')
     if not last or (now - datetime.fromisoformat(last)).total_seconds() > 60:
-        rec['last_used_at'] = now.isoformat(timespec='seconds')
-        _save_api_keys(keys)
+        with DATA_LOCK:   # re-read under the lock so a concurrent key change isn't lost
+            keys = _load_api_keys()
+            fresh = next((k for k in keys if k['id'] == rec['id']), None)
+            if fresh:
+                fresh['last_used_at'] = now.isoformat(timespec='seconds')
+                _save_api_keys(keys)
     return user, rec
 
 def current_username():
@@ -158,38 +252,26 @@ def _submitted_via():
 
 # ── Submission store ──────────────────────────────────
 def _load_submissions():
-    if not os.path.exists(DB_PATH):
-        return []
-    with open(DB_PATH, 'r', encoding='utf-8') as f:
-        return json.load(f)
+    return _read_json(DB_PATH, [])
 
 def _save_submissions(subs):
-    with open(DB_PATH, 'w', encoding='utf-8') as f:
-        json.dump(subs, f, indent=2, ensure_ascii=False)
+    _write_json(DB_PATH, subs)
 
 
 # ── Draft store ───────────────────────────────────────
 def _load_drafts():
-    if not os.path.exists(DRAFTS_PATH):
-        return []
-    with open(DRAFTS_PATH, 'r', encoding='utf-8') as f:
-        return json.load(f)
+    return _read_json(DRAFTS_PATH, [])
 
 def _save_drafts(drafts):
-    with open(DRAFTS_PATH, 'w', encoding='utf-8') as f:
-        json.dump(drafts, f, indent=2, ensure_ascii=False)
+    _write_json(DRAFTS_PATH, drafts)
 
 
 # ── Settings store ────────────────────────────────────
 def _load_settings():
-    if not os.path.exists(SETTINGS_PATH):
-        return {'claim_no_next': 1}
-    with open(SETTINGS_PATH, 'r', encoding='utf-8') as f:
-        return json.load(f)
+    return _read_json(SETTINGS_PATH, {'claim_no_next': 1})
 
 def _save_settings(settings):
-    with open(SETTINGS_PATH, 'w', encoding='utf-8') as f:
-        json.dump(settings, f, indent=2)
+    _write_json(SETTINGS_PATH, settings)
 
 def _next_claim_no():
     """Return next claim number and increment the counter."""
@@ -207,12 +289,35 @@ def login_page():
         return redirect(url_for('index'))
     return render_template('login.html')
 
+# Failed-login tracking (in memory): 10 failures within 15 min locks that username for 15 min
+LOGIN_MAX_FAILURES = 10
+LOGIN_WINDOW_SECONDS = 15 * 60
+_login_failures = {}
+
+def _recent_failures(username):
+    cutoff = time.time() - LOGIN_WINDOW_SECONDS
+    fails = [t for t in _login_failures.get(username, []) if t > cutoff]
+    _login_failures[username] = fails
+    return fails
+
 @app.route('/login', methods=['POST'])
 def login_post():
-    data = request.get_json(force=True)
-    user = _get_user(data.get('username', '').strip().lower())
-    if not user or user['password'] != _hash(data.get('password', '')):
+    data = request.get_json(silent=True) or {}
+    username = str(data.get('username', '')).strip().lower()
+    password = str(data.get('password', ''))
+    if len(_recent_failures(username)) >= LOGIN_MAX_FAILURES:
+        return jsonify({'error': 'Too many failed attempts. Try again in 15 minutes.'}), 429
+    user = _get_user(username)
+    if not user or not _check_password(user, password):
+        _login_failures.setdefault(username, []).append(time.time())
         return jsonify({'error': 'Invalid username or password'}), 401
+    _login_failures.pop(username, None)
+    if _is_legacy_hash(user['password']):   # upgrade to a salted hash on successful login
+        users = _load_users()
+        for u in users:
+            if u['username'] == user['username']:
+                u['password'] = _hash(password)
+        _save_users(users)
     session['username']     = user['username']
     session['role']         = user['role']
     session['display_name'] = user['display_name']
@@ -288,23 +393,6 @@ def uploaded_file(filename):
         if os.path.exists(src) and (os.path.exists(cached) or _heic_to_jpeg(src, cached)):
             return send_file(cached, mimetype='image/jpeg')
     return send_from_directory(app.config['UPLOAD_FOLDER'], filename)
-
-
-@app.route('/api/set-print-queue', methods=['POST'])
-@login_required
-def set_print_queue():
-    data = request.get_json(force=True)
-    session['print_queue'] = data.get('files', [])
-    session['print_name']  = data.get('name', '')
-    return jsonify({'ok': True})
-
-
-@app.route('/print-receipts')
-@login_required
-def print_receipts_page():
-    files = session.get('print_queue', [])
-    name  = session.get('print_name', '')
-    return render_template('print_receipts.html', files=files, name=name)
 
 
 def _find_libreoffice():
@@ -399,6 +487,9 @@ def _make_pdf_response(pdf_bytes, filename):
 def convert_to_pdf(filename):
     """Convert a DOCX/DOC/MSG file in the uploads folder to PDF."""
     import subprocess, tempfile, shutil as _shutil
+    # Only plain file names inside uploads/ (no ../ or sub-paths)
+    if filename != os.path.basename(filename) or '\\' in filename or filename.startswith('.'):
+        return jsonify({'error': 'File not found'}), 404
     src_path = os.path.join(app.config['UPLOAD_FOLDER'], filename)
     if not os.path.exists(src_path):
         return jsonify({'error': 'File not found'}), 404
@@ -732,6 +823,9 @@ def update_submission(sid):
         'last_edited_by': current_username(),
         'last_edited_via': _submitted_via(),
     })
+    if not is_admin and rec.get('status') == 'Rejected':
+        rec['status'] = 'Pending'           # owner fixed it: back to finance for review
+        rec['resubmitted_at'] = rec['last_edited_at']
     _save_submissions(subs)
     return jsonify({'id': sid, 'claim_no': rec['claim_no']})
 
@@ -753,7 +847,28 @@ def delete_submission(sid):
 
     updated_subs = [s for s in subs if s['id'] != sid]
     _save_submissions(updated_subs)
+    _delete_unreferenced_files(rec, updated_subs)
     return jsonify({'ok': True})
+
+
+def _attachment_names(rec):
+    return {os.path.basename(a.get('url') or a.get('filename') or '') for a in rec.get('attachments', [])} - {''}
+
+def _delete_unreferenced_files(rec, remaining_subs):
+    """Remove a deleted claim's uploads unless another claim or a draft still uses them."""
+    in_use = set()
+    for other in remaining_subs + _load_drafts():
+        in_use |= _attachment_names(other)
+        for it in other.get('items', []):
+            in_use |= {os.path.basename(f.get('url') or f.get('filename') or '') for f in it.get('files', []) or []}
+    for name in _attachment_names(rec) - in_use:
+        path = os.path.join(app.config['UPLOAD_FOLDER'], name)
+        for p in (path, os.path.splitext(path)[0] + '.converted.jpg'):
+            try:
+                if os.path.isfile(p):
+                    os.remove(p)
+            except OSError:
+                app.logger.warning('Could not delete %s', p)
 
 
 @app.route('/api/users', methods=['GET'])
@@ -780,8 +895,7 @@ def create_user():
         return jsonify({'error': 'Username already exists'}), 409
     users.append({'username': username, 'display_name': display_name,
                   'password': _hash(password), 'role': role})
-    with open(USERS_PATH, 'w', encoding='utf-8') as f:
-        json.dump(users, f, indent=2)
+    _save_users(users)
     return jsonify({'ok': True}), 201
 
 
@@ -800,8 +914,7 @@ def update_user(username):
         user['display_name'] = dn
     if data.get('password'):
         user['password'] = _hash(str(data['password']))
-    with open(USERS_PATH, 'w', encoding='utf-8') as f:
-        json.dump(users, f, indent=2)
+    _save_users(users)
     return jsonify({'ok': True})
 
 
@@ -938,9 +1051,11 @@ def get_draft(did):
     return jsonify(rec)
 
 
-@app.route('/api/drafts/<did>', methods=['PUT'])
+@app.route('/api/drafts/<did>', methods=['PUT', 'POST'])   # POST: navigator.sendBeacon on page leave
 @login_required
 def save_draft(did):
+    if not re.fullmatch(r'[A-Za-z0-9_-]{1,64}', did):
+        return jsonify({'error': 'Invalid draft id'}), 400
     data = request.get_json()
     if not data:
         return jsonify({'error': 'No data'}), 400
@@ -1315,4 +1430,5 @@ def export_month():
 
 
 if __name__ == '__main__':
-    app.run(debug=True, port=5050)
+    # Debug mode exposes an interactive console on errors: only enable it locally
+    app.run(debug=os.environ.get('FLASK_DEBUG') == '1', port=5050)

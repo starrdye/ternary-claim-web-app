@@ -19,3 +19,5 @@ settings.json
 uploads_tmp/
 users.json
 api_keys.json
+.secret_key
+*.tmp

@@ -61,13 +61,15 @@ Then open **http://localhost:5050** in your browser.
 | `egan` | Employee |
 | `yongchuan` | Employee |
 
-Accounts are seeded from `users.json` on first run. Passwords are stored as SHA-256 hashes. Get credentials from whoever administers the app.
+Accounts live in `users.json` (git-ignored, server only). Passwords are stored as salted hashes (werkzeug scrypt); older SHA-256 hashes are upgraded automatically at each user's next successful login. If `users.json` is missing, the app creates only an `admin` account with a random temporary password, printed once in the server log. Get credentials from whoever administers the app.
 
-> **Note:** Set the `SECRET_KEY` environment variable before deploying to any shared environment:
-> ```bash
-> set SECRET_KEY=your-secure-random-string
-> python app.py
-> ```
+### Security defaults
+
+- **Session secret:** uses the `SECRET_KEY` environment variable if set; otherwise a random key is generated once and saved to `.secret_key` (git-ignored). No fallback key exists in the code.
+- **Debug mode is off** unless `FLASK_DEBUG=1` is set. Never enable it on the server.
+- **Login lockout:** 10 failed attempts for a username within 15 minutes locks it for 15 minutes.
+- **Cross-site protection:** the session cookie is `SameSite=Lax`, and JSON endpoints reject non-JSON bodies (415).
+- **Data files** (`submissions.json`, `drafts.json`, `settings.json`, `users.json`, `api_keys.json`) are written atomically under a lock. Run a **single** server process; multiple workers would need a real database.
 
 ## Project Structure
 

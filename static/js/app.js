@@ -681,7 +681,7 @@ function renderPreview() {
 }
 
 const v   = id => document.getElementById(id)?.value.trim() || '';
-const esc = s  => String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+const esc = s  => String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
 
 /* ── Submit ─────────────────────────────────────────── */
 async function submitClaim() {
