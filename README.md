@@ -163,11 +163,12 @@ Then `sudo nginx -t && sudo systemctl reload nginx`. If a Volcano Engine CLB / A
 | `DELETE` | `/api/drafts/<id>` | Delete a draft |
 | `POST` | `/api/export/month` | Export non-archived claims for a month as a ZIP archive |
 | `GET/POST` | `/api/keys` | List / create API keys (admin, browser login only) |
+| `GET` | `/api/keys/<id>/reveal` | Show a key's value again (admin, browser login only) |
 | `DELETE` | `/api/keys/<id>` | Revoke an API key (admin, browser login only) |
 
 ## API Keys (AI agents & scripts)
 
-Admins create keys under **Settings → API Keys**. Each key acts as one user (its owner) and is shown **once**; only its SHA-256 hash is stored, in `api_keys.json` (git-ignored). Keep the key in the agent's secret store or environment (e.g. `CLAIM_API_KEY`), never in Git.
+Admins create keys under **Settings → API Keys**. Each key acts as one user (its owner). Admins can re-copy a key later with **Show**. Keys are stored in `api_keys.json` (git-ignored, server only) and matched by SHA-256 hash; they never appear in key listings. Keep the key in the agent's secret store or environment (e.g. `CLAIM_API_KEY`), never in Git.
 
 ```bash
 curl -H "Authorization: Bearer $CLAIM_API_KEY" https://<host>/api/me

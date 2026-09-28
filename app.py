@@ -65,7 +65,8 @@ def _get_user(username):
     return next((u for u in _load_users() if u['username'] == username), None)
 
 # ── API keys (for AI agents / scripts) ─────────────────
-# Only a SHA-256 of each key is stored; the plaintext is shown once at creation.
+# Keys are matched by SHA-256; the plaintext is also kept (git-ignored file) so
+# admins can re-copy it from Settings. It is never included in key listings.
 API_KEY_PREFIX = 'tcl_'
 
 # Endpoints an API key may call. Everything else (admin pages, approvals,
@@ -765,7 +766,8 @@ def update_user(username):
 @app.route('/api/keys', methods=['GET'])
 @admin_required
 def list_api_keys():
-    return jsonify([{k: v for k, v in rec.items() if k != 'hash'} for rec in _load_api_keys()])
+    return jsonify([{**{k: v for k, v in rec.items() if k not in ('hash', 'key')}, 'revealable': bool(rec.get('key'))}
+                    for rec in _load_api_keys()])
 
 
 @app.route('/api/keys', methods=['POST'])
@@ -784,6 +786,7 @@ def create_api_key():
         'name': name,
         'username': username,
         'hash': _hash_api_key(token),
+        'key': token,
         'preview': token[:10] + '...',
         'created_at': datetime.now().isoformat(timespec='seconds'),
         'created_by': current_username(),
@@ -792,8 +795,18 @@ def create_api_key():
     keys = _load_api_keys()
     keys.append(rec)
     _save_api_keys(keys)
-    # The plaintext key is returned exactly once and never stored
-    return jsonify({**{k: v for k, v in rec.items() if k != 'hash'}, 'key': token}), 201
+    return jsonify({**{k: v for k, v in rec.items() if k != 'hash'}}), 201
+
+
+@app.route('/api/keys/<kid>/reveal', methods=['GET'])
+@admin_required
+def reveal_api_key(kid):
+    rec = next((k for k in _load_api_keys() if k['id'] == kid), None)
+    if not rec:
+        return jsonify({'error': 'Not found'}), 404
+    if not rec.get('key'):
+        return jsonify({'error': 'This key was created before keys could be re-shown; create a new one'}), 410
+    return jsonify({'key': rec['key']})
 
 
 @app.route('/api/keys/<kid>', methods=['DELETE'])

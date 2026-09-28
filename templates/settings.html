@@ -291,7 +291,7 @@
         Keys let AI agents and scripts file claims and upload receipts on behalf of a user
         (send <code>Authorization: Bearer &lt;key&gt;</code>). A key acts as its owner, can create drafts and
         pending claims, but can never approve claims, change settings or manage users.
-        The key is shown only once. Store it in the agent's secret settings, never in Git.
+        Use <strong>Show</strong> to copy a key again. Store it in the agent's secret settings, never in Git.
       </div>
       <div id="key-table-wrap" style="overflow-x:auto">
         <table class="user-table" id="key-table">
@@ -322,7 +322,7 @@
         </table>
       </div>
       <div class="key-reveal" id="key-reveal">
-        <strong>Copy this key now. It won't be shown again.</strong>
+        <strong id="key-reveal-title">API key</strong>
         <code id="key-reveal-value"></code>
         <button class="user-save-btn" onclick="copyKey()">Copy</button>
         <button class="user-save-btn" onclick="document.getElementById('key-reveal').classList.remove('show')">Done</button>
@@ -408,7 +408,10 @@
         <td class="user-mono">${escHtml(k.preview)}</td>
         <td class="user-mono">${fmtDT(k.created_at)}</td>
         <td class="user-mono">${fmtDT(k.last_used_at)}</td>
-        <td><button class="user-save-btn user-del-btn" onclick="revokeKey('${escHtml(k.id)}')">Revoke</button></td>
+        <td style="white-space:nowrap">
+          ${k.revealable ? `<button class="user-save-btn" onclick="showKey('${escHtml(k.id)}')">Show</button>` : ''}
+          <button class="user-save-btn user-del-btn" onclick="revokeKey('${escHtml(k.id)}')">Revoke</button>
+        </td>
       </tr>`).join('')
       : '<tr><td colspan="6" style="text-align:center;color:var(--muted);padding:14px">No API keys yet</td></tr>';
   }
@@ -425,9 +428,21 @@
     const data = await res.json().catch(() => ({}));
     if (!res.ok) { flashToast('toast-add-key', data.error || 'Failed', false); return; }
     document.getElementById('new-key-name').value = '';
-    document.getElementById('key-reveal-value').textContent = data.key;
-    document.getElementById('key-reveal').classList.add('show');
+    revealKey(data.name, data.key);
     loadKeys();
+  }
+
+  function revealKey(name, key) {
+    document.getElementById('key-reveal-title').textContent = `API key: ${name}`;
+    document.getElementById('key-reveal-value').textContent = key;
+    document.getElementById('key-reveal').classList.add('show');
+  }
+
+  async function showKey(id) {
+    const res = await fetch(`/api/keys/${id}/reveal`);
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) { alert(data.error || 'Could not show key'); return; }
+    revealKey(keyNames[id] || id, data.key);
   }
 
   async function copyKey() {
