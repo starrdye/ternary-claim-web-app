@@ -605,3 +605,5 @@
     max-width: 96vw;
   }
 }
+
+.badge-Api { background: #ede7f6; color: #4527a0; border: 1px solid #b39ddb; }

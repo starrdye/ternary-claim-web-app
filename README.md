@@ -157,10 +157,29 @@ Then `sudo nginx -t && sudo systemctl reload nginx`. If a Volcano Engine CLB / A
 | `PATCH` | `/api/settings` | Update `claim_no_next` |
 | `GET` | `/api/users` | List all users (admin only) |
 | `PATCH` | `/api/users/<username>` | Update display name and/or password (admin only) |
-| `POST` | `/api/drafts` | Save or update a draft |
+| `PUT` | `/api/drafts/<id>` | Save or update a draft |
 | `GET` | `/api/drafts` | List drafts for the current user |
+| `GET` | `/api/drafts/<id>` | Get a single draft |
 | `DELETE` | `/api/drafts/<id>` | Delete a draft |
 | `POST` | `/api/export/month` | Export non-archived claims for a month as a ZIP archive |
+| `GET/POST` | `/api/keys` | List / create API keys (admin, browser login only) |
+| `DELETE` | `/api/keys/<id>` | Revoke an API key (admin, browser login only) |
+
+## API Keys (AI agents & scripts)
+
+Admins create keys under **Settings → API Keys**. Each key acts as one user (its owner) and is shown **once**; only its SHA-256 hash is stored, in `api_keys.json` (git-ignored). Keep the key in the agent's secret store or environment (e.g. `CLAIM_API_KEY`), never in Git.
+
+```bash
+curl -H "Authorization: Bearer $CLAIM_API_KEY" https://<host>/api/me
+```
+
+- **Allowed:** `/api/me`, uploads (`/api/upload`, `/api/upload-chunk`, `/uploads/<file>`), `/api/submit`, `/api/submissions[/<id>]` (GET/PUT/DELETE, own claims unless the owner is an admin), drafts, `/api/next-claim-no`, `/api/generate-excel`.
+- **Never allowed with a key:** approving or archiving claims, users, settings, keys, monthly export, and the HTML pages. These require a browser login.
+- A key can never edit an **Approved** claim, even an admin-owned key.
+- Claims and drafts created with a key are tagged `submitted_via: "api:<key name>"` and show a **Filed by AI** badge in the admin dashboard.
+- Unauthenticated `/api/*` calls return `401` JSON; invalid or revoked keys return `401`; disallowed endpoints return `403`.
+
+`users.json` and `api_keys.json` are git-ignored and live only on the server. Back them up separately.
 
 ## Company Info (auto-populated in Excel)
 

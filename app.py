@@ -4,9 +4,10 @@ import json
 import uuid
 import zipfile
 import hashlib
+import secrets
 from datetime import datetime
 from functools import wraps
-from flask import Flask, request, jsonify, send_file, render_template, send_from_directory, session, redirect, url_for
+from flask import Flask, request, jsonify, send_file, render_template, send_from_directory, session, redirect, url_for, g
 from openpyxl import load_workbook, Workbook
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 from openpyxl.utils import get_column_letter
@@ -24,6 +25,7 @@ DB_PATH       = os.path.join(os.path.dirname(__file__), 'submissions.json')
 USERS_PATH    = os.path.join(os.path.dirname(__file__), 'users.json')
 DRAFTS_PATH   = os.path.join(os.path.dirname(__file__), 'drafts.json')
 SETTINGS_PATH = os.path.join(os.path.dirname(__file__), 'settings.json')
+API_KEYS_PATH = os.path.join(os.path.dirname(__file__), 'api_keys.json')
 
 os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
 
@@ -62,23 +64,94 @@ def _load_users():
 def _get_user(username):
     return next((u for u in _load_users() if u['username'] == username), None)
 
+# ── API keys (for AI agents / scripts) ─────────────────
+# Only a SHA-256 of each key is stored; the plaintext is shown once at creation.
+API_KEY_PREFIX = 'tcl_'
+
+# Endpoints an API key may call. Everything else (admin pages, approvals,
+# user and key management, settings) requires a real browser login.
+API_KEY_ENDPOINTS = {
+    'me', 'upload_file', 'upload_chunk', 'uploaded_file',
+    'submit_claim', 'list_submissions', 'get_submission', 'update_submission', 'delete_submission',
+    'list_drafts', 'get_draft', 'save_draft', 'delete_draft', 'next_claim_no', 'generate_excel',
+}
+
+def _load_api_keys():
+    if not os.path.exists(API_KEYS_PATH):
+        return []
+    with open(API_KEYS_PATH, encoding='utf-8') as f:
+        return json.load(f)
+
+def _save_api_keys(keys):
+    with open(API_KEYS_PATH, 'w', encoding='utf-8') as f:
+        json.dump(keys, f, indent=2)
+
+def _hash_api_key(key: str) -> str:
+    return hashlib.sha256(key.encode()).hexdigest()
+
+def _auth_from_api_key():
+    """Return (user, key_record) for a valid 'Authorization: Bearer tcl_...' header, else (None, None)."""
+    header = request.headers.get('Authorization', '')
+    if not header.startswith('Bearer '):
+        return None, None
+    token = header[7:].strip()
+    if not token.startswith(API_KEY_PREFIX):
+        return None, None
+    digest = _hash_api_key(token)
+    keys = _load_api_keys()
+    rec = next((k for k in keys if secrets.compare_digest(k['hash'], digest)), None)
+    if not rec:
+        return None, None
+    user = _get_user(rec['username'])
+    if not user:
+        return None, None
+    now = datetime.now()
+    last = rec.get('last_used_at')
+    if not last or (now - datetime.fromisoformat(last)).total_seconds() > 60:
+        rec['last_used_at'] = now.isoformat(timespec='seconds')
+        _save_api_keys(keys)
+    return user, rec
+
+def current_username():
+    return g.api_user['username'] if g.get('api_user') else session.get('username')
+
+def current_role():
+    return g.api_user.get('role', 'employee') if g.get('api_user') else session.get('role')
+
+def _auth_or_reject(admin=False):
+    """Authenticate via session or API key; returns a response to send if rejected, else None."""
+    if 'username' in session:
+        if admin and session.get('role') != 'admin':
+            return jsonify({'error': 'Admin only'}), 403
+        return None
+    if request.headers.get('Authorization'):
+        user, key = _auth_from_api_key()
+        if not user:
+            return jsonify({'error': 'Invalid or revoked API key'}), 401
+        if admin or request.endpoint not in API_KEY_ENDPOINTS:
+            return jsonify({'error': 'This endpoint is not available to API keys'}), 403
+        g.api_user, g.api_key = user, key
+        return None
+    if request.path.startswith('/api/'):
+        return jsonify({'error': 'Login required'}), 401
+    return redirect(url_for('login_page'))
+
 def login_required(f):
     @wraps(f)
     def decorated(*args, **kwargs):
-        if 'username' not in session:
-            return redirect(url_for('login_page'))
-        return f(*args, **kwargs)
+        rejected = _auth_or_reject()
+        return rejected or f(*args, **kwargs)
     return decorated
 
 def admin_required(f):
     @wraps(f)
     def decorated(*args, **kwargs):
-        if 'username' not in session:
-            return redirect(url_for('login_page'))
-        if session.get('role') != 'admin':
-            return jsonify({'error': 'Admin only'}), 403
-        return f(*args, **kwargs)
+        rejected = _auth_or_reject(admin=True)
+        return rejected or f(*args, **kwargs)
     return decorated
+
+def _submitted_via():
+    return f"api:{g.api_key['name']}" if g.get('api_key') else 'web'
 
 
 # ── Submission store ──────────────────────────────────
@@ -151,6 +224,10 @@ def logout():
 @app.route('/api/me')
 @login_required
 def me():
+    if g.get('api_user'):
+        u = g.api_user
+        return jsonify({'username': u['username'], 'role': u.get('role', 'employee'),
+                        'display_name': u['display_name'], 'via': _submitted_via()})
     return jsonify({
         'username':     session['username'],
         'role':         session['role'],
@@ -168,7 +245,7 @@ def index():
 @app.route('/admin')
 @login_required
 def admin():
-    if session.get('role') != 'admin':
+    if current_role() != 'admin':
         return redirect(url_for('index'))
     return render_template('admin.html')
 
@@ -176,7 +253,7 @@ def admin():
 @app.route('/settings')
 @login_required
 def settings_page():
-    if session.get('role') != 'admin':
+    if current_role() != 'admin':
         return redirect(url_for('index'))
     return render_template('settings.html')
 
@@ -405,28 +482,36 @@ def upload_chunk():
         return jsonify({'error': f'File type {original_ext} not allowed'}), 400
 
     # Bind the partial file to the uploading user so ids can't be hijacked
-    part_path = os.path.join(CHUNK_FOLDER, f"{session['username']}_{upload_id}.part")
-    progress_key = f'chunk_{upload_id}'
+    part_path = os.path.join(CHUNK_FOLDER, f"{current_username()}_{upload_id}.part")
+    next_path = part_path + '.next'   # index of the chunk expected next
     if index == 0:
         _cleanup_stale_chunks()
         mode = 'wb'
     else:
-        if session.get(progress_key) != index or not os.path.exists(part_path):
+        try:
+            with open(next_path, encoding='utf-8') as f:
+                expected = int(f.read().strip())
+        except (OSError, ValueError):
+            expected = None
+        if expected != index or not os.path.exists(part_path):
             return jsonify({'error': 'Chunk out of order; please retry the upload'}), 409
         mode = 'ab'
     with open(part_path, mode) as f:
         chunk.save(f)
     if os.path.getsize(part_path) > app.config['MAX_CONTENT_LENGTH']:
         os.remove(part_path)
-        session.pop(progress_key, None)
+        if os.path.exists(next_path):
+            os.remove(next_path)
         return jsonify({'error': 'File too large (max 100 MB)'}), 413
 
     if index < total - 1:
-        session[progress_key] = index + 1
+        with open(next_path, 'w', encoding='utf-8') as f:
+            f.write(str(index + 1))
         return jsonify({'ok': True, 'received': index + 1})
 
     # Last chunk: move the assembled file into uploads and post-process
-    session.pop(progress_key, None)
+    if os.path.exists(next_path):
+        os.remove(next_path)
     temp_unique_name = f"{uuid.uuid4().hex}{original_ext}"
     save_path = os.path.join(app.config['UPLOAD_FOLDER'], temp_unique_name)
     os.replace(part_path, save_path)
@@ -523,10 +608,10 @@ def submit_claim():
 
     # Allow admin to submit on behalf of another user
     submit_for = str(data.get('submit_for_user', '')).strip()
-    if submit_for and session.get('role') == 'admin' and _get_user(submit_for):
+    if submit_for and current_role() == 'admin' and _get_user(submit_for):
         submitted_by = submit_for
     else:
-        submitted_by = session['username']
+        submitted_by = current_username()
 
     record = {
         'id': submission_id,
@@ -542,6 +627,7 @@ def submit_claim():
         'notes': data.get('notes', ''),
         'items': data.get('items', []),
         'attachments': data.get('attachments', []),
+        'submitted_via': _submitted_via(),
     }
     subs.append(record)
     _save_submissions(subs)
@@ -552,8 +638,8 @@ def submit_claim():
 @login_required
 def list_submissions():
     subs = _load_submissions()
-    if session.get('role') != 'admin':
-        subs = [s for s in subs if s.get('submitted_by') == session['username']]
+    if current_role() != 'admin':
+        subs = [s for s in subs if s.get('submitted_by') == current_username()]
     return jsonify(subs)
 
 
@@ -564,7 +650,7 @@ def get_submission(sid):
     rec = next((s for s in subs if s['id'] == sid), None)
     if not rec:
         return jsonify({'error': 'Not found'}), 404
-    if session.get('role') != 'admin' and rec.get('submitted_by') != session['username']:
+    if current_role() != 'admin' and rec.get('submitted_by') != current_username():
         return jsonify({'error': 'Forbidden'}), 403
     return jsonify(rec)
 
@@ -579,8 +665,10 @@ def update_submission(sid):
     rec = next((s for s in subs if s['id'] == sid), None)
     if not rec:
         return jsonify({'error': 'Not found'}), 404
-    is_admin = session.get('role') == 'admin'
-    is_owner = rec.get('submitted_by') == session['username']
+    is_admin = current_role() == 'admin'
+    is_owner = rec.get('submitted_by') == current_username()
+    if g.get('api_key') and rec.get('status') == 'Approved':
+        return jsonify({'error': 'Cannot edit an approved claim'}), 403
     if not is_admin:
         if not is_owner:
             return jsonify({'error': 'Forbidden'}), 403
@@ -598,7 +686,8 @@ def update_submission(sid):
         'items':         data.get('items',         rec['items']),
         'attachments':   data.get('attachments',   rec.get('attachments', [])),
         'last_edited_at': datetime.now().isoformat(timespec='seconds'),
-        'last_edited_by': session['username'],
+        'last_edited_by': current_username(),
+        'last_edited_via': _submitted_via(),
     })
     _save_submissions(subs)
     return jsonify({'id': sid, 'claim_no': rec['claim_no']})
@@ -612,8 +701,8 @@ def delete_submission(sid):
     if not rec:
         return jsonify({'error': 'Not found'}), 404
 
-    is_admin = session.get('role') == 'admin'
-    if not is_admin and rec.get('submitted_by') != session['username']:
+    is_admin = current_role() == 'admin'
+    if not is_admin and rec.get('submitted_by') != current_username():
         return jsonify({'error': 'Forbidden'}), 403
 
     if rec.get('status') != 'Pending':
@@ -670,6 +759,50 @@ def update_user(username):
         user['password'] = _hash(str(data['password']))
     with open(USERS_PATH, 'w', encoding='utf-8') as f:
         json.dump(users, f, indent=2)
+    return jsonify({'ok': True})
+
+
+@app.route('/api/keys', methods=['GET'])
+@admin_required
+def list_api_keys():
+    return jsonify([{k: v for k, v in rec.items() if k != 'hash'} for rec in _load_api_keys()])
+
+
+@app.route('/api/keys', methods=['POST'])
+@admin_required
+def create_api_key():
+    data = request.get_json(force=True)
+    name = str(data.get('name', '')).strip()
+    username = str(data.get('username', '')).strip().lower()
+    if not name or not username:
+        return jsonify({'error': 'name and username are required'}), 400
+    if not _get_user(username):
+        return jsonify({'error': 'Unknown user'}), 400
+    token = API_KEY_PREFIX + secrets.token_urlsafe(32)
+    rec = {
+        'id': uuid.uuid4().hex[:8],
+        'name': name,
+        'username': username,
+        'hash': _hash_api_key(token),
+        'preview': token[:10] + '...',
+        'created_at': datetime.now().isoformat(timespec='seconds'),
+        'created_by': current_username(),
+        'last_used_at': None,
+    }
+    keys = _load_api_keys()
+    keys.append(rec)
+    _save_api_keys(keys)
+    # The plaintext key is returned exactly once and never stored
+    return jsonify({**{k: v for k, v in rec.items() if k != 'hash'}, 'key': token}), 201
+
+
+@app.route('/api/keys/<kid>', methods=['DELETE'])
+@admin_required
+def revoke_api_key(kid):
+    keys = _load_api_keys()
+    if not any(k['id'] == kid for k in keys):
+        return jsonify({'error': 'Not found'}), 404
+    _save_api_keys([k for k in keys if k['id'] != kid])
     return jsonify({'ok': True})
 
 
@@ -734,9 +867,20 @@ def update_settings():
 @login_required
 def list_drafts():
     drafts = _load_drafts()
-    user_drafts = [d for d in drafts if d.get('username') == session['username']]
+    user_drafts = [d for d in drafts if d.get('username') == current_username()]
     user_drafts.sort(key=lambda d: d.get('updated_at', ''), reverse=True)
     return jsonify(user_drafts)
+
+
+@app.route('/api/drafts/<did>', methods=['GET'])
+@login_required
+def get_draft(did):
+    rec = next((d for d in _load_drafts() if d['id'] == did), None)
+    if not rec:
+        return jsonify({'error': 'Not found'}), 404
+    if rec.get('username') != current_username():
+        return jsonify({'error': 'Forbidden'}), 403
+    return jsonify(rec)
 
 
 @app.route('/api/drafts/<did>', methods=['PUT'])
@@ -749,11 +893,11 @@ def save_draft(did):
     rec = next((d for d in drafts if d['id'] == did), None)
     now = datetime.now().isoformat(timespec='seconds')
     if rec:
-        if rec.get('username') != session['username']:
+        if rec.get('username') != current_username():
             return jsonify({'error': 'Forbidden'}), 403
-        rec.update({**data, 'id': did, 'username': session['username'], 'updated_at': now})
+        rec.update({**data, 'id': did, 'username': current_username(), 'updated_at': now, 'source': _submitted_via()})
     else:
-        drafts.append({**data, 'id': did, 'username': session['username'], 'updated_at': now})
+        drafts.append({**data, 'id': did, 'username': current_username(), 'updated_at': now, 'source': _submitted_via()})
     _save_drafts(drafts)
     return jsonify({'id': did})
 
@@ -765,7 +909,7 @@ def delete_draft(did):
     rec = next((d for d in drafts if d['id'] == did), None)
     if not rec:
         return jsonify({'error': 'Not found'}), 404
-    if rec.get('username') != session['username']:
+    if rec.get('username') != current_username():
         return jsonify({'error': 'Forbidden'}), 403
     _save_drafts([d for d in drafts if d['id'] != did])
     return jsonify({'ok': True})

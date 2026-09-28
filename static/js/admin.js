@@ -93,6 +93,8 @@ function renderTable() {
     const period = formatPeriod(s.period_from, s.period_to);
     const archClass  = s.archived ? ' row-archived' : '';
     const archBadge  = s.archived ? `<span class="badge badge-Archived" style="margin-left:4px">Archived</span>` : '';
+    const viaApi     = (s.submitted_via || '').startsWith('api:');
+    const apiBadge   = viaApi ? `<span class="badge badge-Api" style="margin-left:4px" title="Filed via API key: ${esc(s.submitted_via.slice(4))}">Filed by AI</span>` : '';
     return `<tr data-id="${s.id}" class="${archClass.trim()}" onclick="openDrawer('${s.id}')">
       <td class="td-mono">${fmtDateTime(s.submitted_at)}</td>
       <td><strong>${esc(s.employee_name)}</strong></td>
@@ -101,7 +103,7 @@ function renderTable() {
       <td class="td-num">${(s.total || 0).toLocaleString('en-SG', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
       <td class="td-items">${items}</td>
       <td class="td-docs">${docs > 0 ? `📎 ${docs}` : '—'}</td>
-      <td><span class="badge badge-${s.status}">${s.status}</span>${archBadge}</td>
+      <td><span class="badge badge-${s.status}">${s.status}</span>${archBadge}${apiBadge}</td>
       <td><button class="row-view-btn" onclick="event.stopPropagation();openDrawer('${s.id}')">View →</button></td>
     </tr>`;
   }).join('');
@@ -190,6 +192,10 @@ function renderDrawer(s) {
           <span class="drawer-meta-label">Claim No.</span>
           <span class="drawer-meta-value">${esc(s.claim_no || '—')}</span>
         </div>
+        ${(s.submitted_via || '').startsWith('api:') ? `<div class="drawer-meta-row">
+          <span class="drawer-meta-label">Filed via</span>
+          <span class="drawer-meta-value">API key: ${esc(s.submitted_via.slice(4))}</span>
+        </div>` : ''}
         <div class="drawer-meta-row">
           <span class="drawer-meta-label">Period From</span>
           <span class="drawer-meta-value">${fmtDate(s.period_from)}</span>

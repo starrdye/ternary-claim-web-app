@@ -17,3 +17,5 @@ settings.json
 *.bat
 
 uploads_tmp/
+users.json
+api_keys.json

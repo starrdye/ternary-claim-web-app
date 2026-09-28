@@ -183,6 +183,17 @@
       margin-left: 6px;
     }
     .user-row-toast.show { display: inline; }
+    .user-del-btn { background: #fdecea; color: #c0392b; border: 1px solid #f5b7b1; }
+    .user-del-btn:hover { background: #c0392b; color: #fff; }
+    .key-reveal {
+      display: none; margin-top: 12px; padding: 12px 14px;
+      background: #fff8e1; border: 1px solid #ffc107; border-radius: 4px; font-size: 12.5px;
+    }
+    .key-reveal.show { display: block; }
+    .key-reveal code {
+      display: block; margin: 8px 0; padding: 8px 10px; background: #fff; border: 1px solid var(--border-l);
+      border-radius: 3px; font-size: 12.5px; word-break: break-all; user-select: all;
+    }
     @media (max-width: 576px) {
       .settings-wrap {
         margin: 20px auto;
@@ -273,6 +284,52 @@
       </div>
     </div>
 
+    <!-- API Keys -->
+    <div class="settings-card">
+      <div class="settings-card-title">API Keys</div>
+      <div class="settings-card-desc">
+        Keys let AI agents and scripts file claims and upload receipts on behalf of a user
+        (send <code>Authorization: Bearer &lt;key&gt;</code>). A key acts as its owner, can create drafts and
+        pending claims, but can never approve claims, change settings or manage users.
+        The key is shown only once. Store it in the agent's secret settings, never in Git.
+      </div>
+      <div id="key-table-wrap" style="overflow-x:auto">
+        <table class="user-table" id="key-table">
+          <thead>
+            <tr>
+              <th>Name</th>
+              <th>Acts as</th>
+              <th>Key</th>
+              <th>Created</th>
+              <th>Last used</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody id="key-tbody">
+            <tr><td colspan="6" style="text-align:center;color:var(--muted);padding:20px">Loading…</td></tr>
+          </tbody>
+          <tfoot>
+            <tr style="background:var(--paper)">
+              <td><input class="user-input" id="new-key-name" type="text" placeholder="e.g. Hermes WhatsApp" autocomplete="off" /></td>
+              <td><select class="user-input" id="new-key-user" style="min-width:120px"></select></td>
+              <td colspan="3" class="user-mono">Generated on create</td>
+              <td style="white-space:nowrap">
+                <button class="user-save-btn" onclick="createKey()">+ Create</button>
+                <span class="user-row-toast" id="toast-add-key"></span>
+              </td>
+            </tr>
+          </tfoot>
+        </table>
+      </div>
+      <div class="key-reveal" id="key-reveal">
+        <strong>Copy this key now. It won't be shown again.</strong>
+        <code id="key-reveal-value"></code>
+        <button class="user-save-btn" onclick="copyKey()">Copy</button>
+        <button class="user-save-btn" onclick="document.getElementById('key-reveal').classList.remove('show')">Done</button>
+        <span class="user-row-toast" id="toast-copy-key"></span>
+      </div>
+    </div>
+
     <!-- Claim Number Settings -->
     <div class="settings-card">
       <div class="settings-card-title">Claim Form Numbering</div>
@@ -321,6 +378,71 @@
       </tr>`).join('');
   }
   loadUsers();
+
+  // ── API keys ─────────────────────────────────────────
+  const fmtDT = dt => dt ? new Date(dt).toLocaleString('en-GB', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '—';
+
+  function flashToast(id, text, ok = true) {
+    const t = document.getElementById(id);
+    t.style.color = ok ? '#155724' : '#721c24';
+    t.textContent = text;
+    t.classList.add('show');
+    setTimeout(() => t.classList.remove('show'), 3000);
+  }
+
+  let keyNames = {};
+  async function loadKeys() {
+    const [kRes, uRes] = await Promise.all([fetch('/api/keys'), fetch('/api/users')]);
+    if (!kRes.ok || !uRes.ok) return;
+    const keys = await kRes.json();
+    keyNames = Object.fromEntries(keys.map(k => [k.id, k.name]));
+    const users = await uRes.json();
+    const names = Object.fromEntries(users.map(u => [u.username, u.display_name]));
+    document.getElementById('new-key-user').innerHTML = users
+      .map(u => `<option value="${escHtml(u.username)}">${escHtml(u.display_name)} (${escHtml(u.role)})</option>`).join('');
+    const tbody = document.getElementById('key-tbody');
+    tbody.innerHTML = keys.length ? keys.map(k => `
+      <tr>
+        <td>${escHtml(k.name)}</td>
+        <td>${escHtml(names[k.username] || k.username)}</td>
+        <td class="user-mono">${escHtml(k.preview)}</td>
+        <td class="user-mono">${fmtDT(k.created_at)}</td>
+        <td class="user-mono">${fmtDT(k.last_used_at)}</td>
+        <td><button class="user-save-btn user-del-btn" onclick="revokeKey('${escHtml(k.id)}')">Revoke</button></td>
+      </tr>`).join('')
+      : '<tr><td colspan="6" style="text-align:center;color:var(--muted);padding:14px">No API keys yet</td></tr>';
+  }
+  loadKeys();
+
+  async function createKey() {
+    const name = document.getElementById('new-key-name').value.trim();
+    const username = document.getElementById('new-key-user').value;
+    if (!name || !username) { flashToast('toast-add-key', 'Name required', false); return; }
+    const res = await fetch('/api/keys', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name, username }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) { flashToast('toast-add-key', data.error || 'Failed', false); return; }
+    document.getElementById('new-key-name').value = '';
+    document.getElementById('key-reveal-value').textContent = data.key;
+    document.getElementById('key-reveal').classList.add('show');
+    loadKeys();
+  }
+
+  async function copyKey() {
+    try {
+      await navigator.clipboard.writeText(document.getElementById('key-reveal-value').textContent);
+      flashToast('toast-copy-key', '✓ Copied');
+    } catch { flashToast('toast-copy-key', 'Select and copy manually', false); }
+  }
+
+  async function revokeKey(id) {
+    if (!confirm(`Revoke API key "${keyNames[id] || id}"? Anything using it will stop working immediately.`)) return;
+    const res = await fetch(`/api/keys/${id}`, { method: 'DELETE' });
+    if (!res.ok) { alert('Failed to revoke key'); return; }
+    loadKeys();
+  }
 
   function escHtml(s) {
     return String(s||'').replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
