@@ -727,7 +727,7 @@ def submit_claim():
 
     subs = _load_submissions()
     submission_id = uuid.uuid4().hex[:10]
-    total = sum(float(it.get('total') or 0) for it in data.get('items', []) if it.get('total'))
+    total = sum(_to_amount(it.get('total')) or 0 for it in data.get('items', []))
 
     # Auto-assign claim number: use provided value or fetch+increment counter
     claim_no_auto = data.get('claim_no_auto', False)
@@ -808,7 +808,7 @@ def update_submission(sid):
             return jsonify({'error': 'Forbidden'}), 403
         if rec.get('status') == 'Approved':
             return jsonify({'error': 'Cannot edit an approved claim'}), 403
-    total = sum(float(it.get('total') or 0) for it in data.get('items', []) if it.get('total'))
+    total = sum(_to_amount(it.get('total')) or 0 for it in data.get('items', []))
     rec.update({
         'employee_name': data.get('employee_name', rec['employee_name']),
         'claim_no':      data.get('claim_no',      rec['claim_no']),
@@ -1110,6 +1110,25 @@ def generate_excel():
     )
 
 
+def _to_amount(val):
+    """Parse an amount like 12.5, '1,234.50' or 'S$ 12.50'; None if blank or not a number."""
+    if val is None or isinstance(val, bool):
+        return None
+    if isinstance(val, (int, float)):
+        return float(val)
+    cleaned = re.sub(r'[^0-9.\-]', '', str(val))
+    if cleaned in ('', '-', '.', '-.'):
+        return None
+    try:
+        return float(cleaned)
+    except ValueError:
+        return None
+
+
+def _item_has_content(it):
+    return any(str(it.get(k) or '').strip() for k in ('date', 'description', 'gst', 'total'))
+
+
 def _build_workbook(data):
     from openpyxl.drawing.image import Image as XLImage
 
@@ -1228,9 +1247,17 @@ def _build_workbook(data):
     ws.merge_cells('D12:E12')
     ws.row_dimensions[12].height = 18
 
-    items = data.get('items', [])
-    for i in range(15):
-        row  = 13 + i
+    # One row per item (blank rows kept so row N matches receipt "N."), at least
+    # MIN_ITEM_ROWS to keep the template look; everything below shifts down.
+    MIN_ITEM_ROWS = 15
+    items = data.get('items', []) or []
+    last_filled = max((i for i, it in enumerate(items) if _item_has_content(it)), default=-1)
+    n_rows = max(MIN_ITEM_ROWS, last_filled + 1)
+    first_row = 13
+    last_row = first_row + n_rows - 1
+    grand_total = 0.0
+    for i in range(n_rows):
+        row  = first_row + i
         item = items[i] if i < len(items) else {}
         ws.row_dimensions[row].height = 20.15
 
@@ -1254,86 +1281,93 @@ def _build_workbook(data):
         ws[f'B{row}'].alignment = Alignment(vertical='center', wrap_text=True)
         ws[f'B{row}'].border = b_all
 
-        if gst not in ('', None):
-            try:
-                ws[f'C{row}'] = float(gst)
-                ws[f'C{row}'].number_format = '#,##0.00'
-            except (ValueError, TypeError):
-                ws[f'C{row}'] = gst
+        gst_num = _to_amount(gst)
+        if gst_num is not None:
+            ws[f'C{row}'] = gst_num
+            ws[f'C{row}'].number_format = '#,##0.00'
+        elif gst not in ('', None):
+            ws[f'C{row}'] = gst
         ws[f'C{row}'].font = fn
         ws[f'C{row}'].alignment = Alignment(horizontal='right', vertical='center')
         ws[f'C{row}'].border = b_all
 
-        if total not in ('', None):
-            try:
-                ws[f'D{row}'] = float(total)
-                ws[f'D{row}'].number_format = '#,##0.00'
-            except (ValueError, TypeError):
-                ws[f'D{row}'] = total
+        total_num = _to_amount(total)
+        if total_num is not None:
+            ws[f'D{row}'] = total_num
+            ws[f'D{row}'].number_format = '#,##0.00'
+            grand_total += total_num
+        elif total not in ('', None):
+            ws[f'D{row}'] = total
         ws[f'D{row}'].font = fn
         ws[f'D{row}'].alignment = Alignment(horizontal='right', vertical='center')
         ws[f'D{row}'].border = b_all
         ws.merge_cells(f'D{row}:E{row}')
 
-    ws.row_dimensions[28].height = 20.15
-    ws['C28'] = 'Total Reimbursement'
-    ws['C28'].font = fb
-    ws['C28'].alignment = Alignment(horizontal='right', vertical='center')
-    ws['C28'].border = b_td
+    # Rows below the item table, relative to the total row (row 28 in the 15-row layout)
+    t = last_row + 1
+    shift = t - 28
 
-    ws['D28'] = '=SUM(D13:D27)'
-    ws['D28'].number_format = '#,##0.00'
-    ws['D28'].font = fb
-    ws['D28'].alignment = Alignment(horizontal='right', vertical='center')
-    ws['D28'].border = b_td
-    ws.merge_cells('D28:E28')
+    ws.row_dimensions[t].height = 20.15
+    ws[f'C{t}'] = 'Total Reimbursement'
+    ws[f'C{t}'].font = fb
+    ws[f'C{t}'].alignment = Alignment(horizontal='right', vertical='center')
+    ws[f'C{t}'].border = b_td
 
-    for r in range(29, 38):
+    # Store the computed value (not a formula): file previews (Outlook, phones,
+    # Drive) don't recalculate, so a formula would show as blank there.
+    ws[f'D{t}'] = round(grand_total, 2)
+    ws[f'D{t}'].number_format = '#,##0.00'
+    ws[f'D{t}'].font = fb
+    ws[f'D{t}'].alignment = Alignment(horizontal='right', vertical='center')
+    ws[f'D{t}'].border = b_td
+    ws.merge_cells(f'D{t}:E{t}')
+
+    for r in range(29 + shift, 38 + shift):
         ws.row_dimensions[r].height = 18
 
-    ws.row_dimensions[38].height = 18
+    sig = 38 + shift
+    ws.row_dimensions[sig].height = 18
     for col, label in [('A', 'Received by'), ('B', 'Date'), ('C', 'Approved by'), ('D', 'Date')]:
-        ws[f'{col}38'] = label
-        ws[f'{col}38'].font = fn
-        ws[f'{col}38'].alignment = Alignment(horizontal='center' if col != 'A' else 'left', vertical='center')
-        ws[f'{col}38'].border = b_t
+        ws[f'{col}{sig}'] = label
+        ws[f'{col}{sig}'].font = fn
+        ws[f'{col}{sig}'].alignment = Alignment(horizontal='center' if col != 'A' else 'left', vertical='center')
+        ws[f'{col}{sig}'].border = b_t
 
-    for r in range(39, 42):
+    for r in range(39 + shift, 42 + shift):
         ws.row_dimensions[r].height = 18
 
-    ws.row_dimensions[42].height = 18
-    ws['C42'] = 'Note:'
-    ws['C42'].font = fb
-    ws['C42'].alignment = Alignment(vertical='center')
-    ws.merge_cells('C42:E42')
+    note = 42 + shift
+    ws.row_dimensions[note].height = 18
+    ws[f'C{note}'] = 'Note:'
+    ws[f'C{note}'].font = fb
+    ws[f'C{note}'].alignment = Alignment(vertical='center')
+    ws.merge_cells(f'C{note}:E{note}')
 
     note_text = data.get('notes', '')
     if note_text:
-        ws['C43'] = note_text
-        ws['C43'].font = fn
-        ws['C43'].alignment = Alignment(wrap_text=True, vertical='top')
-    ws.merge_cells('C43:E46')
+        ws[f'C{note + 1}'] = note_text
+        ws[f'C{note + 1}'].font = fn
+        ws[f'C{note + 1}'].alignment = Alignment(wrap_text=True, vertical='top')
+    ws.merge_cells(f'C{note + 1}:E{note + 4}')
 
-    for r in range(47, 54):
+    for r in range(47 + shift, 54 + shift):
         ws.row_dimensions[r].height = 18
 
-    ws.row_dimensions[54].height = 18
-    ws['A54'] = COMPANY_NAME
-    ws['A54'].font = fb
-    ws['A54'].alignment = Alignment(vertical='center')
-    ws.merge_cells('A54:E54')
+    footer = 54 + shift
+    for offset, text, font in [(0, COMPANY_NAME, fb), (1, COMPANY_UEN, fs), (2, COMPANY_ADDRESS, fs)]:
+        r = footer + offset
+        ws.row_dimensions[r].height = 18
+        ws[f'A{r}'] = text
+        ws[f'A{r}'].font = font
+        ws[f'A{r}'].alignment = Alignment(vertical='center')
+        ws.merge_cells(f'A{r}:E{r}')
 
-    ws.row_dimensions[55].height = 18
-    ws['A55'] = COMPANY_UEN
-    ws['A55'].font = fs
-    ws['A55'].alignment = Alignment(vertical='center')
-    ws.merge_cells('A55:E55')
-
-    ws.row_dimensions[56].height = 18
-    ws['A56'] = COMPANY_ADDRESS
-    ws['A56'].font = fs
-    ws['A56'].alignment = Alignment(vertical='center')
-    ws.merge_cells('A56:E56')
+    # Long claims: keep one page wide but let it run onto more pages, repeating the header row
+    if n_rows > MIN_ITEM_ROWS:
+        ws.page_setup.fitToWidth = 1
+        ws.page_setup.fitToHeight = 0
+        ws.print_title_rows = '12:12'
+    ws.print_area = f'A1:E{footer + 2}'
 
     attachments = data.get('attachments', [])
     if attachments:
